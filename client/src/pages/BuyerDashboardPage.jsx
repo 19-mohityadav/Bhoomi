@@ -40,21 +40,22 @@ const BuyerDashboardPage = () => {
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { navigate('/login'); return; }
-    const { data } = await supabase.from('profiles').select('full_name, wallet_address, role').eq('id', user.id).single();
+    const mockUserStr = localStorage.getItem('mockUser');
+    if (!mockUserStr) { navigate('/login'); return; }
+    const data = JSON.parse(mockUserStr);
     setProfile(data);
     setLoading(false);
     return data;
   }, [navigate]);
 
   const loadListings = useCallback(async () => {
-    // Show only approved lands with an NFT minted (available to purchase)
+    // Show only approved lands with an NFT minted and listed for sale
     const { data } = await supabase
       .from('land_parcels')
       .select('*')
       .eq('status', 'approved')
       .not('nft_tx_hash', 'is', null)
+      .eq('is_for_sale', true)
       .order('created_at', { ascending: false });
     if (data) setListings(data);
   }, []);
@@ -79,7 +80,7 @@ const BuyerDashboardPage = () => {
   }, [loadProfile, loadListings, loadTransactions]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem('mockUser');
     navigate('/login');
   };
 
@@ -125,6 +126,13 @@ const BuyerDashboardPage = () => {
         event_type: 'sold',
         amount_eth: parseFloat(selectedProperty.price) || 0,
       });
+
+      // Update land parcel ownership and status in DB
+      await supabase.from('land_parcels').update({
+        owner_address: profile.wallet_address,
+        is_for_sale: false,
+        status: 'sold'
+      }).eq('id', selectedProperty.id);
 
       // Refresh balance
       getWalletBalance(profile.wallet_address).then(setEthBalance);

@@ -1,16 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const loginBtnRef = useRef(null);
-
-  // States for login form
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -35,54 +27,30 @@ const LoginPage = () => {
     };
   }, []);
 
-  const handleBtnMouseMove = (e) => {
-    if (!loginBtnRef.current) return;
-    const rect = loginBtnRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    loginBtnRef.current.style.setProperty('--mouse-x', `${x}px`);
-    loginBtnRef.current.style.setProperty('--mouse-y', `${y}px`);
-  };
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    const { data: loginData, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (authError) {
-      setError(authError.message);
-      setLoading(false);
-      return;
-    }
-
-    // Query adminstartator table to check if the user is an admin
-    const { data: admin } = await supabase
-      .from('adminstartator')
-      .select('role')
-      .eq('id', loginData.user.id)
-      .single();
-
-    // Query profiles as fallback
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', loginData.user.id)
-      .single();
-
-    const userRole = (admin && admin.role) || (profile && profile.role) || 'buyer';
-
-    setLoading(false);
+  const handleRoleLogin = (role) => {
+    // Determine the dashboard path and display name based on role
+    let dashboardPath = '';
+    let fullName = '';
     
-    // Determine the dashboard path based on role
-    const dashboardPath = userRole === 'authority' ? '/authority-dashboard' 
-                        : userRole === 'seller' ? '/seller-dashboard' 
-                        : '/buyer-dashboard';
+    if (role === 'authority') {
+      dashboardPath = '/authority-dashboard';
+      fullName = 'Inspector General';
+    } else if (role === 'seller') {
+      dashboardPath = '/dashboard';
+      fullName = 'Alex Sterling (Seller)';
+    } else {
+      dashboardPath = '/buyer-dashboard';
+      fullName = 'Guest Buyer';
+    }
                         
+    // Set mock user in localStorage
+    localStorage.setItem('mockUser', JSON.stringify({
+      role: role,
+      id: `mock-${role}-${Date.now()}`,
+      full_name: fullName,
+      wallet_address: null // To be set when they connect wallet
+    }));
+
     // Redirect to connect wallet first, passing the intended destination
     navigate('/connect-wallet', { state: { redirectTo: dashboardPath } });
   };
@@ -116,71 +84,62 @@ const LoginPage = () => {
             <div className="mb-10">
               <div className="flex items-center space-x-2 mb-2">
                 <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
-                <span className="font-label text-[10px] tracking-[0.2em] uppercase text-on-surface-variant">Secure Ledger Auth</span>
+                <span className="font-label text-[10px] tracking-[0.2em] uppercase text-on-surface-variant">Dev Mode Enabled</span>
               </div>
-              <h1 className="font-display text-4xl font-bold tracking-tight text-on-surface">Welcome Back</h1>
+              <h1 className="font-display text-4xl font-bold tracking-tight text-on-surface">Select Role</h1>
+              <p className="text-on-surface-variant text-sm mt-2">Authentication bypassed for easy testing.</p>
             </div>
             
-            {/* Error Message Box */}
-            {error && (
-              <div className="mb-6 bg-error/10 text-error border border-error/20 p-4 rounded-md text-sm font-medium animate-fade-up-in flex items-center gap-2">
-                <span className="material-symbols-outlined text-sm">error</span>
-                {error}
-              </div>
-            )}
+            <div className="space-y-4">
+              <button 
+                onClick={() => handleRoleLogin('seller')}
+                className="w-full flex items-center justify-between p-5 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                    <span className="material-symbols-outlined">real_estate_agent</span>
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-bold text-on-surface">Enter as Seller</h3>
+                    <p className="text-xs text-on-surface-variant">Upload & manage land assets</p>
+                  </div>
+                </div>
+                <span className="material-symbols-outlined text-primary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">arrow_forward</span>
+              </button>
 
-            <form className="space-y-6" onSubmit={handleLogin}>
-              {/* Email/User ID Input */}
-              <div className="space-y-2">
-                <label className="font-label text-[10px] tracking-widest uppercase text-on-surface-variant ml-1" htmlFor="username">Email Address</label>
-                <div className="relative group">
-                  <input className="w-full bg-surface-container-lowest border-none rounded-md px-5 py-4 text-on-surface focus:ring-1 focus:ring-primary-dim transition-all duration-300 placeholder:text-outline/50" id="username" placeholder="arch@bhoomi.xyz" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required/>
-                  <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-outline/40 group-focus-within:text-primary-dim transition-colors duration-300">person</span>
+              <button 
+                onClick={() => handleRoleLogin('buyer')}
+                className="w-full flex items-center justify-between p-5 rounded-lg border border-secondary/30 bg-secondary/5 hover:bg-secondary/10 hover:border-secondary/50 transition-all group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center text-secondary group-hover:scale-110 transition-transform">
+                    <span className="material-symbols-outlined">shopping_cart</span>
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-bold text-on-surface">Enter as Buyer</h3>
+                    <p className="text-xs text-on-surface-variant">Purchase land NFTs</p>
+                  </div>
                 </div>
-              </div>
-              
-              {/* Password Input */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center px-1">
-                  <label className="font-label text-[10px] tracking-widest uppercase text-on-surface-variant" htmlFor="password">Security Key</label>
-                  <a className="text-[10px] tracking-widest uppercase text-primary hover:text-primary-dim transition-colors" href="#">Forgot Password?</a>
+                <span className="material-symbols-outlined text-secondary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">arrow_forward</span>
+              </button>
+
+              <button 
+                onClick={() => handleRoleLogin('authority')}
+                className="w-full flex items-center justify-between p-5 rounded-lg border border-tertiary/30 bg-tertiary/5 hover:bg-tertiary/10 hover:border-tertiary/50 transition-all group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full bg-tertiary/20 flex items-center justify-center text-tertiary group-hover:scale-110 transition-transform">
+                    <span className="material-symbols-outlined">gavel</span>
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-bold text-on-surface">Enter as Authority</h3>
+                    <p className="text-xs text-on-surface-variant">Verify & approve applications</p>
+                  </div>
                 </div>
-                <div className="relative group">
-                  <input className="w-full bg-surface-container-lowest border-none rounded-md px-5 py-4 text-on-surface focus:ring-1 focus:ring-primary-dim transition-all duration-300 placeholder:text-outline/50" id="password" placeholder="••••••••••••" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required/>
-                  <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-outline/40 group-focus-within:text-primary-dim transition-colors duration-300">lock</span>
-                </div>
-              </div>
-              
-              {/* Login Button */}
-              <div className="pt-4">
-                <button 
-                  ref={loginBtnRef}
-                  onMouseMove={handleBtnMouseMove}
-                  disabled={loading}
-                  className="w-full primary-gradient text-on-primary-fixed py-5 rounded-md font-headline font-bold text-lg tracking-wide hover:shadow-[0_0_30px_rgba(143,245,255,0.4)] active:scale-[0.98] transition-all duration-300 disabled:opacity-50 btn-shimmer"
-                >
-                  {loading ? (
-                    <span className="inline-flex items-center gap-2">
-                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-                      Authenticating...
-                    </span>
-                  ) : 'Login to Registry'}
-                </button>
-              </div>
-            </form>
-            
-            {/* Footer Links */}
-            <div className="mt-12 pt-8 border-t border-outline-variant/10">
-              <div className="flex flex-col space-y-4 md:flex-row md:space-y-0 md:justify-between md:items-center">
-                <Link to="/register" className="font-label text-xs tracking-wider text-on-surface-variant hover:text-secondary transition-colors duration-300 inline-flex items-center space-x-2 group">
-                  <span>Register New Account</span>
-                  <span className="material-symbols-outlined text-[14px] group-hover:translate-x-1 transition-transform duration-300">arrow_forward</span>
-                </Link>
-                <Link to="/authority-dashboard" className="font-label text-xs tracking-wider text-on-surface-variant opacity-60 hover:opacity-100 transition-all duration-300">
-                  Admin Login
-                </Link>
-              </div>
+                <span className="material-symbols-outlined text-tertiary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">arrow_forward</span>
+              </button>
             </div>
+            
           </div>
         </div>
       </main>

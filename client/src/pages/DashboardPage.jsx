@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { mintLandNFT, getWalletBalance } from '../utils/blockchain';
+import { mintLandNFT, getWalletBalance, listLandNFT } from '../utils/blockchain';
 
 // ─── Pinata Upload ────────────────────────────────────────────────────────────
 const pinataUpload = async (file, name) => {
@@ -104,17 +104,20 @@ const DashboardPage = () => {
   const [files, setFiles] = useState({ image: null, deed: null, agreement: null, registry: null });
   const [uploadStep, setUploadStep] = useState(''); // status message
   const [uploading, setUploading] = useState(false);
+  const [listingToken, setListingToken] = useState(null); // tracking token being listed
 
   // ─── Load Profile ─────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { navigate('/login'); return; }
+    
+    // Read from localStorage instead of Supabase Auth
+    const mockUserStr = localStorage.getItem('mockUser');
+    if (!mockUserStr) { navigate('/login'); return; }
+    
+    const mockUser = JSON.parse(mockUserStr);
+    setUserProfile(mockUser);
 
-    const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    setUserProfile(prof);
-
-    const addr = prof?.wallet_address;
+    const addr = mockUser.wallet_address;
     if (addr) {
       setWalletAddress(addr);
       getWalletBalance(addr).then(setEthBalance);
@@ -148,10 +151,13 @@ const DashboardPage = () => {
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const addr = accounts[0];
 
-      // Save to Supabase profile
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from('profiles').update({ wallet_address: addr }).eq('id', user.id);
+      // Save to mock profile
+      const mockUserStr = localStorage.getItem('mockUser');
+      if (mockUserStr) {
+        const mockUser = JSON.parse(mockUserStr);
+        mockUser.wallet_address = addr;
+        localStorage.setItem('mockUser', JSON.stringify(mockUser));
+        setUserProfile(mockUser);
       }
 
       setWalletAddress(addr);
@@ -174,7 +180,7 @@ const DashboardPage = () => {
 
   // ─── Logout ───────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem('mockUser');
     navigate('/login');
   };
 
@@ -617,6 +623,52 @@ const DashboardPage = () => {
                 </div>
                 {nft.nft_minted_at && (
                   <p className="text-[10px] text-on-surface-variant/50 mt-2">Minted {new Date(nft.nft_minted_at).toLocaleDateString()}</p>
+                )}
+                
+                {/* List on Marketplace Button */}
+                {!nft.is_for_sale && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        setListingToken(nft.token_id);
+                        await listLandNFT({ tokenId: nft.token_id, priceEth: nft.price || 0 });
+                        
+                        // Update in Supabase
+                        await supabase
+                          .from('land_parcels')
+                          .update({ is_for_sale: true })
+                          .eq('id', nft.id);
+                          
+                        // Log event
+                        await supabase.from('land_transactions').insert({
+                          land_parcel_id: nft.id,
+                          seller_address: walletAddress,
+                          event_type: 'listed',
+                          amount_eth: nft.price || 0
+                        });
+                        
+                        alert('✅ NFT successfully listed on the Marketplace!');
+                        await loadAll();
+                      } catch (err) {
+                        alert('❌ Failed to list on marketplace: ' + err.message);
+                      } finally {
+                        setListingToken(null);
+                      }
+                    }}
+                    disabled={listingToken === nft.token_id}
+                    className="w-full mt-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-md font-bold text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {listingToken === nft.token_id ? (
+                      <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Listing...</>
+                    ) : (
+                      <><span className="material-symbols-outlined text-sm">storefront</span> List for Sale</>
+                    )}
+                  </button>
+                )}
+                {nft.is_for_sale && (
+                  <div className="w-full mt-4 py-2 bg-green-500/10 text-green-400 border border-green-500/20 rounded-md font-bold text-sm text-center flex items-center justify-center gap-1">
+                    <span className="material-symbols-outlined text-sm">check_circle</span> Listed on Marketplace
+                  </div>
                 )}
               </div>
             </GlassCard>
