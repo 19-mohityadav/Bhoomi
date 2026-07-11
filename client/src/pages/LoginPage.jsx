@@ -74,14 +74,17 @@ const LoginPage = () => {
       .eq('id', loginData.user.id)
       .single();
 
-    const isAuthority = (admin && admin.role === 'authority') || (profile && profile.role === 'authority');
+    const userRole = (admin && admin.role) || (profile && profile.role) || 'buyer';
 
     setLoading(false);
-    if (isAuthority) {
-      navigate('/authority-dashboard');
-    } else {
-      navigate('/dashboard');
-    }
+    
+    // Determine the dashboard path based on role
+    const dashboardPath = userRole === 'authority' ? '/authority-dashboard' 
+                        : userRole === 'seller' ? '/seller-dashboard' 
+                        : '/buyer-dashboard';
+                        
+    // Redirect to connect wallet first, passing the intended destination
+    navigate('/connect-wallet', { state: { redirectTo: dashboardPath } });
   };
 
   return (

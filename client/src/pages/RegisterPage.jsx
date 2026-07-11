@@ -193,7 +193,7 @@ const SelfieWidget = ({ onCapture }) => {
 // ─────────────────────────────────────────────
 const RegisterPage = () => {
   const [step, setStep] = useState(0);
-  const [role, setRole] = useState('owner');
+  const [role, setRole] = useState('buyer');
 
   // step 0
   const [fullName, setFullName] = useState('');
@@ -349,11 +349,14 @@ const RegisterPage = () => {
                 <div className="space-y-3">
                   <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant">Identity Role</label>
                   <div className="flex p-1 bg-surface-container-lowest rounded-md space-x-1">
-                    {['owner', 'buyer'].map((r) => (
-                      <button key={r} type="button" onClick={() => setRole(r)}
-                        className={`flex-1 py-3 rounded-sm text-sm font-bold transition-all duration-300 ${role === r ? 'active-role' : 'text-on-surface-variant hover:text-on-surface'}`}>
-                        {r === 'owner' ? 'Land Owner' : 'Buyer'}
-                      </button>
+                    {[
+                      { id: 'buyer', label: 'Buyer' },
+                      { id: 'seller', label: 'Seller' }
+                    ].map((r) => (
+                      <div key={r.id} onClick={() => setRole(r.id)}
+                        className={`flex-1 py-3 text-center cursor-pointer rounded-md text-sm font-bold transition-all duration-300 ${role === r.id ? 'active-role shadow-md' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
+                        {r.label}
+                      </div>
                     ))}
                   </div>
                 </div>
