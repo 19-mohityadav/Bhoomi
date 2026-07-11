@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
@@ -63,6 +64,13 @@ const Navbar = () => {
           >
             View Demo
           </a>
+
+          {/* Wallet Connect Button */}
+          <ConnectButton
+            showBalance={false}
+            chainStatus="icon"
+            accountStatus="avatar"
+          />
 
           {/* Mobile hamburger */}
           <button
