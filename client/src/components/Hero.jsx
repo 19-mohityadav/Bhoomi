@@ -120,18 +120,15 @@ const Hero = () => {
               to="/register"
               className="btn-shimmer w-full sm:w-auto px-10 py-4 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary-container font-headline font-bold uppercase tracking-widest text-sm hover:translate-y-[-3px] transition-all duration-300 shadow-lg shadow-primary/10 hover:shadow-xl hover:shadow-primary/20 text-center"
             >
-              Explore Platform
+              Login / Register
             </Link>
             <a
               href="#demo"
               className="w-full sm:w-auto px-10 py-4 rounded-lg bg-transparent text-secondary border border-outline-variant/20 font-headline font-bold uppercase tracking-widest text-sm hover:bg-surface-container-high hover:border-secondary/40 transition-all duration-300 text-center group"
             >
-              <div className='flex justify-center mt-3'>
-                <span className="inline-flex items-center gap-2">
+              <div className='flex justify-center'>
+                <span className="inline-flex items-center">
                 View Demo
-                <span className="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform duration-300">
-                  arrow_forward
-                </span>
               </span>
               </div>
             </a>
