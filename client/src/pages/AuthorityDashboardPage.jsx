@@ -1,401 +1,324 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 
-const STAT_CARDS = [
-  {
-    id: 'kyc',
-    icon: 'how_to_reg',
-    label: 'Pending KYC Requests',
-    value: '1,284',
-    change: '+12%',
-    status: 'up',
-    colorClass: 'text-primary',
-    bgClass: 'bg-primary/10',
-  },
-  {
-    id: 'land',
-    icon: 'verified_user',
-    label: 'Pending Land Verifications',
-    value: '456',
-    change: 'STABLE',
-    status: 'stable',
-    colorClass: 'text-secondary',
-    bgClass: 'bg-secondary/10',
-  },
-  {
-    id: 'fraud',
-    icon: 'report_problem',
-    label: 'Fraud Detection Alerts',
-    value: '21',
-    change: 'URGENT',
-    status: 'urgent',
-    colorClass: 'text-error',
-    bgClass: 'bg-error/10',
-  },
-];
+// ─── Simulate NFT Mint ────────────────────────────────────────────────────────
+const simulateNFTMint = () => ({
+  hash: '0x' + Array.from({ length: 64 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join(''),
+  tokenId: Math.floor(Math.random() * 900000) + 100000,
+});
 
-const SIDEBAR_ITEMS = [
-  { icon: 'dashboard', label: 'Dashboard', id: 'dashboard' },
-  { icon: 'how_to_reg', label: 'KYC Requests', id: 'kyc' },
-  { icon: 'verified_user', label: 'Land Verifications', id: 'land' },
-  { icon: 'report_problem', label: 'Fraud Alerts', id: 'fraud' },
-  { icon: 'terminal', label: 'System Logs', id: 'logs' },
-];
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+const StatusBadge = ({ status }) => {
+  const map = {
+    pending:  'bg-amber-50 text-amber-700 border-amber-200',
+    approved: 'bg-green-50 text-green-700 border-green-200',
+    rejected: 'bg-red-50 text-red-700 border-red-200',
+  };
+  return (
+    <span className={`px-2.5 py-0.5 rounded-full border text-xs font-semibold uppercase tracking-wide ${map[status] || map.pending}`}>
+      {status}
+    </span>
+  );
+};
 
-function AuthorityDashboardPage() {
+const TABS = ['Verification Queue', 'Approved Lands', 'Rejected'];
+const TAB_ICONS = {
+  'Verification Queue': 'pending_actions',
+  'Approved Lands': 'verified',
+  'Rejected': 'gpp_bad',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+const AuthorityDashboardPage = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [caseStatus, setCaseStatus] = useState('pending'); // 'pending' | 'approved' | 'rejected' | 'changes'
-
-  const [adminDetails, setAdminDetails] = useState(null);
+  const [activeTab, setActiveTab] = useState('Verification Queue');
+  const [allLands, setAllLands] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [actionLoading, setActionLoading] = useState(null); // land id being actioned
+  const [authorityName, setAuthorityName] = useState('Inspector General');
+
+  const loadLands = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('land_parcels')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (data && !error) setAllLands(data);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    const fetchAdminProfile = async () => {
-      try {
-        setLoading(true);
-        // Get active auth user
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-        if (userError || !user) {
-          console.warn('No active session, redirecting to /login');
-          navigate('/login');
-          return;
-        }
-
-        // Query adminstartator table
-        const { data: admin, error: adminError } = await supabase
-          .from('adminstartator')
-          .select('*')
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('full_name, role')
           .eq('id', user.id)
           .single();
-
-        if (adminError || !admin) {
-          console.log('Admin record not found in adminstartator, searching profiles as fallback', adminError);
-          // Query profiles as fallback
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-
-          if (profile && profile.role === 'authority') {
-            setAdminDetails({
-              full_name: profile.full_name,
-              role: profile.role,
-              email: user.email
-            });
-          } else {
-            console.error('User is not authorized as authority in profiles', profileError);
-            setError('Access Denied: You do not have authority privileges.');
-            await supabase.auth.signOut();
-            navigate('/login');
-            return;
-          }
-        } else {
-          setAdminDetails(admin);
-        }
-      } catch (err) {
-        console.error('Error fetching admin profile:', err);
-        setError('Error establishing server connection.');
-      } finally {
-        setLoading(false);
+        if (data?.full_name) setAuthorityName(data.full_name);
       }
+      loadLands();
     };
-
-    fetchAdminProfile();
-  }, [navigate]);
+    init();
+  }, [loadLands]);
 
   const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
+
+  // ─── Approve Land ─────────────────────────────────────────────────────────────
+  const handleApprove = async (land) => {
+    setActionLoading(land.id);
     try {
-      await supabase.auth.signOut();
-      navigate('/login');
+      const { hash, tokenId } = simulateNFTMint();
+
+      // Update land status + write NFT data
+      const { error } = await supabase
+        .from('land_parcels')
+        .update({
+          status: 'approved',
+          nft_tx_hash: hash,
+          nft_minted_at: new Date().toISOString(),
+          token_id: tokenId,
+        })
+        .eq('id', land.id);
+
+      if (error) throw error;
+
+      // Log 'approved' transaction
+      await supabase.from('land_transactions').insert({
+        land_parcel_id: land.id,
+        seller_address: land.owner_address,
+        event_type: 'approved',
+        amount_eth: 0,
+      });
+
+      // Log 'minted' transaction
+      await supabase.from('land_transactions').insert({
+        land_parcel_id: land.id,
+        seller_address: land.owner_address,
+        event_type: 'minted',
+        amount_eth: 0,
+      });
+
+      await loadLands();
     } catch (err) {
-      console.error('Error during sign out:', err);
-      navigate('/login');
+      console.error('Approve error:', err);
+      alert('Failed to approve: ' + err.message);
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  const handleAction = (status) => {
-    setCaseStatus(status);
-    setTimeout(() => {
-      alert(`Case Registry Decision: ${status.toUpperCase()}`);
-    }, 100);
+  // ─── Reject Land ──────────────────────────────────────────────────────────────
+  const handleReject = async (land) => {
+    const reason = prompt('Enter rejection reason (optional):');
+    setActionLoading(land.id);
+    try {
+      const { error } = await supabase
+        .from('land_parcels')
+        .update({ status: 'rejected', authority_notes: reason || 'Rejected by authority' })
+        .eq('id', land.id);
+
+      if (error) throw error;
+
+      await supabase.from('land_transactions').insert({
+        land_parcel_id: land.id,
+        seller_address: land.owner_address,
+        event_type: 'rejected',
+        amount_eth: 0,
+      });
+
+      await loadLands();
+    } catch (err) {
+      console.error('Reject error:', err);
+      alert('Failed to reject: ' + err.message);
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  return (
-    <div className="bg-background text-on-surface font-body overflow-x-hidden selection:bg-primary/30 min-h-screen flex page-enter">
-      {/* SideNavBar Shell */}
-      <aside className="fixed left-0 top-0 h-screen w-72 flex flex-col z-40 bg-surface-container shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
-        <div className="p-8">
-          <Link to="/dashboard" className="text-2xl font-display font-bold bg-gradient-to-r from-primary to-primary-container bg-clip-text text-transparent">
-            Bhoomi
-          </Link>
-          <p className="font-label uppercase tracking-widest text-[0.65rem] text-on-surface-variant mt-1">Registry Authority</p>
+  // ─── Filter Lands by Tab ──────────────────────────────────────────────────────
+  const filteredLands = allLands.filter(l => {
+    if (activeTab === 'Verification Queue') return !l.status || l.status === 'pending';
+    if (activeTab === 'Approved Lands') return l.status === 'approved';
+    if (activeTab === 'Rejected') return l.status === 'rejected';
+    return true;
+  });
+
+  // ─── Land Card ────────────────────────────────────────────────────────────────
+  const LandCard = ({ land }) => (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+      <div className="h-32 bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center relative">
+        <span className="material-symbols-outlined text-5xl text-slate-300">landscape</span>
+        <div className="absolute top-3 right-3">
+          <StatusBadge status={land.status || 'pending'} />
         </div>
-        <nav className="flex-1 mt-4">
-          <div className="space-y-1">
-            {SIDEBAR_ITEMS.map((item) => {
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-8 py-4 transition-colors duration-200 text-left
-                    ${isActive 
-                      ? 'bg-primary/10 text-primary border-r-4 border-primary font-bold' 
-                      : 'text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                    }`}
-                >
-                  <span className="material-symbols-outlined" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>{item.icon}</span>
-                  <span className="font-headline tracking-wide">{item.label}</span>
-                </button>
-              );
-            })}
+      </div>
+      <div className="p-5">
+        <h4 className="font-bold text-slate-900 mb-0.5">{land.land_name || `Property #${land.token_id}`}</h4>
+        <p className="text-xs text-slate-400 mb-3">{new Date(land.created_at).toLocaleString()}</p>
+
+        <div className="space-y-1.5 text-xs text-slate-600 mb-4">
+          <div className="flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-xs text-slate-400">account_balance_wallet</span>
+            <span className="font-mono">{land.owner_address.substring(0, 10)}...{land.owner_address.slice(-6)}</span>
           </div>
-        </nav>
-        <div className="p-6">
-          <button className="w-full py-4 rounded-md bg-gradient-to-br from-primary to-primary-container text-on-primary font-bold shadow-[0_4px_20px_rgba(143,245,255,0.2)] active:scale-95 transition-transform duration-150">
-            New Entry
-          </button>
-          <div className="mt-8 flex items-center justify-between px-2 w-full">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="relative flex-shrink-0">
-                <img
-                  alt="Admin User Avatar"
-                  className="w-10 h-10 rounded-full object-cover border border-primary/20"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuA9hvVavHZPZy4sIdE-YmZwBGRvoZfxz6Vl-Jpfb5V7_oiRLmPOFr53wq414lM9ImLTpeGKxDgizvlgDQVxCHefit2WVW5XNaDG-1FGMXqep0p55l7BXWgpyUmzAc4bevNVFuoK45bVboiOzhb4irzA71FQHpKnIkcAAbflS87hrMZGGEDhAmzKTr_Es3ne533ZBNlJjsK23f9tC25ODTSZeybLPDjulD16eFXaK0YLDg1h-mlxX_9Yfu5g2Jf60pyImgnaTpqdhJm6"
-                />
-                <div className="absolute bottom-0 right-0 w-3 h-3 bg-tertiary rounded-full border-2 border-surface-container shadow-sm animate-pulse"></div>
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-on-surface truncate pr-1" title={loading ? 'Loading...' : (adminDetails?.full_name || 'Admin User')}>
-                  {loading ? 'Loading...' : (adminDetails?.full_name || 'Admin User')}
-                </p>
-                <p className="text-[0.7rem] text-on-surface-variant uppercase tracking-tighter truncate" title={loading ? 'Registrar' : (adminDetails?.role === 'authority' ? 'Chief Registrar' : adminDetails?.role || 'Registrar')}>
-                  {loading ? 'Registrar' : (adminDetails?.role === 'authority' ? 'Chief Registrar' : adminDetails?.role || 'Registrar')}
-                </p>
-              </div>
+          <div className="flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-xs text-slate-400">location_on</span>
+            <span>{land.coordinates}</span>
+          </div>
+          {land.area_sqft && (
+            <div className="flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-xs text-slate-400">square_foot</span>
+              <span>{land.area_sqft.toLocaleString()} sq. ft</span>
             </div>
-            <button 
-              onClick={handleLogout}
-              title="Sign Out"
-              className="text-on-surface-variant hover:text-error transition-all p-2 rounded-full hover:bg-error/10 flex items-center justify-center cursor-pointer flex-shrink-0"
-            >
-              <span className="material-symbols-outlined text-[20px]">logout</span>
+          )}
+          {land.description && (
+            <div className="flex items-start gap-1.5">
+              <span className="material-symbols-outlined text-xs text-slate-400 mt-0.5">notes</span>
+              <span className="line-clamp-2">{land.description}</span>
+            </div>
+          )}
+        </div>
+
+        {land.document_url && (
+          <a href={land.document_url} target="_blank" rel="noreferrer"
+            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:underline mb-4">
+            <span className="material-symbols-outlined text-xs">attach_file</span>
+            View Title Deed (IPFS)
+          </a>
+        )}
+
+        {/* NFT info if approved */}
+        {land.status === 'approved' && land.nft_tx_hash && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+            <p className="text-xs font-semibold text-green-700 mb-1">NFT Minted ✓</p>
+            <p className="font-mono text-xs text-green-600 break-all">{land.nft_tx_hash.substring(0, 30)}...</p>
+          </div>
+        )}
+
+        {/* Rejection reason */}
+        {land.status === 'rejected' && land.authority_notes && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+            <p className="text-xs font-semibold text-red-700 mb-1">Rejection Reason</p>
+            <p className="text-xs text-red-600">{land.authority_notes}</p>
+          </div>
+        )}
+
+        {/* Action Buttons - only for pending */}
+        {(!land.status || land.status === 'pending') && (
+          <div className="flex gap-2 pt-3 border-t border-slate-100">
+            <button
+              onClick={() => handleApprove(land)}
+              disabled={actionLoading === land.id}
+              className="flex-1 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-1">
+              {actionLoading === land.id ? (
+                <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+              ) : (
+                <><span className="material-symbols-outlined text-sm">verified</span> Approve & Mint NFT</>
+              )}
+            </button>
+            <button
+              onClick={() => handleReject(land)}
+              disabled={actionLoading === land.id}
+              className="flex-1 py-2 bg-red-50 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-100 border border-red-200 transition-colors disabled:opacity-50 flex items-center justify-center gap-1">
+              <span className="material-symbols-outlined text-sm">gpp_bad</span> Reject
             </button>
           </div>
+        )}
+      </div>
+    </div>
+  );
 
+  return (
+    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex sticky top-0 h-screen">
+        <div className="p-6 border-b border-slate-100">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-800">Bhoomi</h1>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">Authority Portal</p>
+        </div>
+        <nav className="flex-1 px-3 py-4 space-y-1">
+          {TABS.map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 ${
+                activeTab === tab
+                  ? 'bg-slate-100 text-indigo-700 font-semibold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}>
+              <span className={`material-symbols-outlined text-lg ${activeTab === tab ? 'text-indigo-600' : 'text-slate-400'}`}>
+                {TAB_ICONS[tab]}
+              </span>
+              {tab}
+              {tab === 'Verification Queue' && (
+                <span className="ml-auto bg-amber-100 text-amber-700 text-xs font-bold px-1.5 py-0.5 rounded-full">
+                  {allLands.filter(l => !l.status || l.status === 'pending').length}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+        <div className="p-4 border-t border-slate-100">
+          <div className="flex items-center gap-3 mb-3 px-2">
+            <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-sm">
+              {authorityName.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-900 truncate">{authorityName}</p>
+              <p className="text-xs text-slate-400">Authority</p>
+            </div>
+          </div>
+          <button onClick={handleLogout}
+            className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm">logout</span> Sign Out
+          </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="ml-72 flex-grow min-h-screen flex flex-col">
-        {/* TopNavBar Shell */}
-        <header className="sticky top-0 z-30 flex items-center justify-between px-12 h-20 bg-surface/40 backdrop-blur-xl">
-          <div className="flex items-center gap-4 flex-1">
-            <div className="relative w-96">
-              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-xl">search</span>
-              <input
-                className="w-full bg-surface-container-lowest border-none rounded-sm py-2.5 pl-12 pr-4 text-sm focus:ring-1 focus:ring-primary/50 text-on-surface placeholder:text-on-surface-variant/50 transition-all outline-none"
-                placeholder="Search transactions, properties, or identities..."
-                type="text"
-              />
-            </div>
+      {/* Main */}
+      <main className="flex-1 flex flex-col min-h-screen">
+        <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 sticky top-0 z-10">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-slate-400">{TAB_ICONS[activeTab]}</span>
+            <h2 className="text-lg font-semibold text-slate-900">{activeTab}</h2>
+            <span className="text-xs text-slate-400">({filteredLands.length})</span>
           </div>
-          <div className="flex items-center gap-8">
-            <div className="flex items-center gap-6">
-              <button className="text-on-surface-variant hover:text-primary transition-all relative">
-                <span className="material-symbols-outlined">notifications</span>
-                <span className="absolute top-0 right-0 w-2 h-2 bg-error rounded-full border-2 border-surface-dim"></span>
-              </button>
-              <button className="text-on-surface-variant hover:text-primary transition-all">
-                <span className="material-symbols-outlined">settings</span>
-              </button>
-            </div>
-            <div className="h-8 w-[1px] bg-outline-variant/20"></div>
-            <div className="flex items-center gap-3">
-              <span className="font-headline text-lg font-bold gradient-text">Authority Panel</span>
-              <div className="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center ghost-border">
-                <span className="material-symbols-outlined text-sm">shield</span>
-              </div>
-            </div>
+          <div className="flex items-center gap-3">
+            <span className="bg-red-100 text-red-700 text-xs font-bold px-3 py-1 rounded-full border border-red-200">
+              Authority
+            </span>
+            <button onClick={loadLands}
+              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+              <span className="material-symbols-outlined text-lg">refresh</span>
+            </button>
           </div>
         </header>
 
-        <section className="p-12 space-y-12 max-w-7xl mx-auto flex-grow">
-          {/* Metric Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {STAT_CARDS.map((card) => (
-              <div
-                key={card.id}
-                className="surface-container-low p-8 rounded-lg relative overflow-hidden group hover:bg-surface-container-high transition-all duration-300 border border-outline-variant/15 cursor-pointer hover-lift"
-              >
-                <div className="flex justify-between items-start mb-6">
-                  <div className={`p-3 ${card.bgClass} rounded-md`}>
-                    <span className={`material-symbols-outlined ${card.colorClass}`}>{card.icon}</span>
-                  </div>
-                  <span
-                    className={`flex items-center gap-1 text-[0.7rem] font-label
-                      ${card.status === 'up' ? 'text-tertiary' : card.status === 'urgent' ? 'text-error' : 'text-on-surface-variant'}`}
-                  >
-                    {card.status === 'up' && <span className="material-symbols-outlined text-[1rem]">trending_up</span>}
-                    {card.change}
-                  </span>
-                </div>
-                <p className="font-label uppercase text-[0.7rem] text-on-surface-variant tracking-[0.2em]">{card.label}</p>
-                <h3 className="text-4xl font-display font-bold mt-2">{card.value}</h3>
-                <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                  <span className={`material-symbols-outlined text-8xl ${card.colorClass}`}>{card.icon}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Land Review Panel */}
-          <div className="space-y-6">
-            <div className="flex items-end justify-between px-2">
-              <div>
-                <span className="text-primary font-label text-[0.7rem] tracking-widest uppercase">Critical Action Required</span>
-                <h2 className="text-3xl font-display font-bold mt-1">Land Review Panel</h2>
-              </div>
-              <div className="flex items-center gap-4 text-on-surface-variant text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-tertiary animate-pulse"></div>
-                  Live Ledger Sync
-                </div>
-                <span>Case #REV-00912</span>
-              </div>
+        <div className="flex-1 p-8 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <span className="material-symbols-outlined text-4xl text-indigo-400 animate-spin">progress_activity</span>
             </div>
-            <div className="grid grid-cols-12 gap-8">
-              {/* Left Content: Property & Details */}
-              <div className="col-span-12 lg:col-span-8 glass-card rounded-lg p-10 border border-primary/5">
-                <div className="flex flex-col md:flex-row justify-between gap-12">
-                  <div className="space-y-10 flex-1">
-                    {/* Owner Section */}
-                    <div className="flex items-center gap-6">
-                      <img
-                        alt="Alex Sterling Avatar"
-                        className="w-16 h-16 rounded-full object-cover border border-outline-variant/15"
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuCm7gAMTnBgnEoGSIlB1WXRjNlzvLmP98IuvjRK1s5pGm-A_VpvKKZjTZDI43rR-SWsA2mkZUyzcVcbqyHbPUoooILnYDyvDNE4ofoe8lVN-9ZQVuyVcf4DCoUGvOpRscPgP1DMPfHu_zVhsmscVKTi3t3Te8TOyxDMsN7MZMnPd1yQI-xNDM17AskdsJt8AjUeKgkFG2a2zctRfJCJWzlHGq5oCJEyVD5BOODxiec7gzM0g2XWPvyzaZq-1kjyJyvpbrh5yecpOPEn"
-                      />
-                      <div>
-                        <p className="font-label uppercase text-[0.6rem] text-on-surface-variant tracking-[0.2em]">Owner Details</p>
-                        <h4 className="text-2xl font-display font-bold">Alex Sterling</h4>
-                        <p className="font-label text-xs font-mono text-primary/70 mt-1">ID: OX82F...A1E</p>
-                      </div>
-                    </div>
-                    {/* Specs Section */}
-                    <div className="grid grid-cols-2 gap-8 py-8 border-y border-outline-variant/10">
-                      <div>
-                        <p className="font-label uppercase text-[0.6rem] text-on-surface-variant tracking-[0.2em]">Plot Reference</p>
-                        <p className="text-xl font-headline font-bold mt-1">#PL-881</p>
-                      </div>
-                      <div>
-                        <p className="font-label uppercase text-[0.6rem] text-on-surface-variant tracking-[0.2em]">Total Area</p>
-                        <p className="text-xl font-headline font-bold mt-1">1,250 SQ. FT.</p>
-                      </div>
-                    </div>
-                    {/* Documents Section */}
-                    <div>
-                      <p className="font-label uppercase text-[0.6rem] text-on-surface-variant tracking-[0.2em] mb-4">Document Gallery</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="surface-container p-4 rounded-md flex items-center justify-between border border-outline-variant/15 hover:bg-surface-container-highest transition-colors">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded bg-primary/5 flex items-center justify-center">
-                              <span className="material-symbols-outlined text-primary">description</span>
-                            </div>
-                            <span className="text-sm font-medium">Title Deed</span>
-                          </div>
-                          <button onClick={() => alert('Viewing Title Deed')} className="text-[0.7rem] uppercase font-label font-bold text-primary hover:underline">
-                            View File
-                          </button>
-                        </div>
-                        <div className="surface-container p-4 rounded-md flex items-center justify-between border border-outline-variant/15 hover:bg-surface-container-highest transition-colors">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded bg-secondary/5 flex items-center justify-center">
-                              <span className="material-symbols-outlined text-secondary">verified</span>
-                            </div>
-                            <span className="text-sm font-medium">Ownership Proof</span>
-                          </div>
-                          <button onClick={() => alert('Viewing Ownership Proof')} className="text-[0.7rem] uppercase font-label font-bold text-secondary hover:underline">
-                            View File
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Map Section */}
-                  <div className="w-full md:w-80 space-y-4">
-                    <p className="font-label uppercase text-[0.6rem] text-on-surface-variant tracking-[0.2em]">Geospatial Preview</p>
-                    <div className="aspect-square w-full rounded-lg overflow-hidden relative group border border-outline-variant/20">
-                      <img
-                        alt="Geospatial Map"
-                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuCOJOGV7JNQXaM0gwFdcXYg4QgXeqeICK4swRAx5_GT5BAONNpVbxaJ8ppuqepbPOkOdwoAKKGj_jlBlIMyJJB1uiwKDGnIugbHrGFELbZEJTWrZPCah6T15gTZCo7o3kZbZBNWtqyfooZgSV7--U7G0jUkw_3DNHrbj0ASFE3vdDFGgnWr4hb9yFfJK7IB9vEoy75pWyMyzUf9dsvzxNkUnDfG4pL8PhMAmmjrOffgML38gD3_JYa02qDhMlg31q8qbuXLgAO02LxX"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent"></div>
-                      <button className="absolute bottom-6 left-1/2 -translate-x-1/2 px-6 py-2 bg-surface-bright/90 backdrop-blur-md rounded-full text-xs font-bold uppercase tracking-widest border border-white/10 hover:bg-primary hover:text-on-primary transition-all">
-                        Open Map
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 text-[0.6rem] font-mono text-on-surface-variant justify-center bg-surface-container-lowest py-2 rounded">
-                      51.5074° N, 0.1278° W
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {/* Right Sidebar: Decision Hub */}
-              <div className="col-span-12 lg:col-span-4 flex flex-col gap-8">
-                <div className="surface-container p-8 rounded-lg border border-outline-variant/15 flex-grow flex flex-col justify-center space-y-6">
-                  <h3 className="text-xl font-display font-bold">Registry Decision</h3>
-                  <p className="text-on-surface-variant text-sm leading-relaxed">
-                    Review all associated metadata and blockchain hash verification before final submission. Approved records are immutable on the MainNet.
-                  </p>
-                  <div className="space-y-4 pt-4">
-                    <button
-                      onClick={() => handleAction('approved')}
-                      className="w-full py-4 rounded-md bg-gradient-to-br from-primary to-primary-container text-on-primary font-bold shadow-[0_4px_30px_rgba(0,238,252,0.3)] hover:brightness-110 active:scale-95 transition-all btn-shimmer"
-                    >
-                      Approve Property
-                    </button>
-                    <button
-                      onClick={() => handleAction('changes')}
-                      className="w-full py-4 rounded-md border border-outline-variant/15 text-on-surface font-bold hover:bg-surface-variant active:scale-95 transition-all"
-                    >
-                      Request Changes
-                    </button>
-                    <button
-                      onClick={() => handleAction('rejected')}
-                      className="w-full py-4 rounded-md bg-error/10 text-error border border-error/20 font-bold hover:bg-error hover:text-on-error active:scale-95 transition-all"
-                    >
-                      Reject Entry
-                    </button>
-                  </div>
-                </div>
-                {/* Secondary Info Card */}
-                <div className="surface-container-low p-6 rounded-lg border-l-4 border-secondary/50">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="material-symbols-outlined text-secondary text-sm">info</span>
-                    <p className="text-xs font-bold uppercase tracking-widest text-secondary">Provisional Alert</p>
-                  </div>
-                  <p className="text-xs text-on-surface-variant">
-                    Cross-reference with the Department of Urban Development (DUD) suggests a minor boundary overlap with Plot #PL-880. Proceed with caution.
-                  </p>
-                </div>
-              </div>
+          ) : filteredLands.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50">
+              <span className="material-symbols-outlined text-5xl text-slate-300 mb-3">{TAB_ICONS[activeTab]}</span>
+              <p className="text-slate-500 font-medium">No lands in this category</p>
             </div>
-          </div>
-        </section>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredLands.map(land => <LandCard key={land.id} land={land} />)}
+            </div>
+          )}
+        </div>
       </main>
-
-      {/* Background Decorator Auras */}
-      <div className="fixed top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/5 blur-[120px] pointer-events-none rounded-full animate-float-slow"></div>
-      <div className="fixed bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-secondary/5 blur-[100px] pointer-events-none rounded-full animate-float"></div>
     </div>
   );
-}
+};
 
 export default AuthorityDashboardPage;

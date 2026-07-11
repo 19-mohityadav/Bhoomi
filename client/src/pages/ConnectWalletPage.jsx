@@ -1,20 +1,41 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '../supabaseClient';
 
 const ConnectWalletPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo = location.state?.redirectTo || '/dashboard';
+  
   const cardRef = useRef(null);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
-  const handleWalletConnect = (walletName) => {
+  const handleWalletConnect = async (walletName) => {
     setIsConnecting(walletName);
-    setTimeout(() => {
-      setIsConnecting(null);
-      setConnectedWallet(walletName);
-    }, 1400);
+    
+    // Simulate connection delay
+    await new Promise(resolve => setTimeout(resolve, 1400));
+    
+    // Generate a mock wallet address for this demo
+    const mockAddress = '0x' + Array.from({length: 40}, () => Math.floor(Math.random()*16).toString(16)).join('');
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('profiles')
+          .update({ wallet_address: mockAddress })
+          .eq('id', user.id);
+      }
+    } catch (err) {
+      console.error("Error saving wallet address:", err);
+    }
+    
+    setIsConnecting(null);
+    setConnectedWallet(walletName);
   };
 
   useEffect(() => {
@@ -203,19 +224,19 @@ const ConnectWalletPage = () => {
             <span className="text-[10px] font-label font-bold uppercase tracking-widest text-tertiary">Encrypted Ledger Connection Active</span>
           </div>
 
-          {/* Continue to KYC CTA */}
+          {/* Continue to Dashboard CTA */}
           {connectedWallet && (
             <div className="mt-6 flex flex-col items-center gap-3 animate-fade-in">
               <p className="text-xs text-on-surface-variant">
                 <span className="text-primary font-semibold">{connectedWallet}</span> connected successfully.
               </p>
-              <Link
-                to="/kyc"
+              <button
+                onClick={() => navigate(redirectTo)}
                 className="w-full primary-gradient text-on-primary-container py-4 rounded-md font-headline font-bold uppercase tracking-widest flex items-center justify-center gap-3 hover:shadow-[0_0_30px_rgba(0,238,252,0.3)] transition-all active:scale-[0.98] btn-shimmer"
               >
-                Continue to KYC Verification
+                Continue to Dashboard
                 <span className="material-symbols-outlined">arrow_forward</span>
-              </Link>
+              </button>
             </div>
           )}
         </div>

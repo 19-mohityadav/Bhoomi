@@ -8,6 +8,8 @@ import MarketPage from './pages/MarketPage';
 import NFT_miningPage from './pages/NFT_miningPage';
 import PropertyDetailsPage from './pages/PropertyDetailsPage';
 import AuthorityDashboardPage from './pages/AuthorityDashboardPage';
+import SellerDashboardPage from './pages/SellerDashboardPage';
+import BuyerDashboardPage from './pages/BuyerDashboardPage';
 import LandRegistrationPage from './pages/LandRegistrationPage';
 import MapExplorerPage from './pages/MapExplorerPage';
 import OwnershipTransferSuccessPage from './pages/OwnershipTransferSuccessPage';
@@ -24,6 +26,8 @@ export const routes = [
   { path: '/mint', element: <NFT_miningPage /> },
   { path: '/property/:id', element: <PropertyDetailsPage /> },
   { path: '/authority-dashboard', element: <AuthorityDashboardPage /> },
+  { path: '/seller-dashboard', element: <SellerDashboardPage /> },
+  { path: '/buyer-dashboard', element: <BuyerDashboardPage /> },
   { path: '/land-registration', element: <LandRegistrationPage /> },
   { path: '/map-explorer', element: <MapExplorerPage /> },
   { path: '/ownership-transfer-success', element: <OwnershipTransferSuccessPage /> },
