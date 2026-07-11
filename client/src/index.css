@@ -1,0 +1,628 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-surface text-on-surface font-body selection:bg-primary selection:text-on-primary;
+  }
+
+  /* Custom scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(19, 17, 15, 0.8);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(253, 218, 143, 0.15);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(253, 218, 143, 0.3);
+  }
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* ═══════════════════════════════════════════════════════
+   GLASSMORPHISM SYSTEM
+   ═══════════════════════════════════════════════════════ */
+
+.glass-card {
+  background: rgba(35, 31, 28, 0.4);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(85, 76, 67, 0.15);
+}
+
+.glass-panel {
+  background: rgba(35, 31, 28, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* ═══════════════════════════════════════════════════════
+   GRADIENT & GLOW SYSTEM
+   ═══════════════════════════════════════════════════════ */
+
+.hero-gradient {
+  background: radial-gradient(circle at 50% 50%, rgba(253, 218, 143, 0.1) 0%, rgba(19, 17, 15, 1) 70%);
+}
+
+.text-glow {
+  text-shadow: 0 0 20px rgba(253, 218, 143, 0.3);
+}
+
+.primary-gradient {
+  background: linear-gradient(135deg, #FDDA8F 0%, #FFE3A8 100%);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #FDDA8F 0%, #FFE3A8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.success-glow {
+  box-shadow: 0 0 50px rgba(253, 218, 143, 0.15);
+}
+
+.primary-glow:hover {
+  box-shadow: 0 0 25px rgba(253, 218, 143, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════
+   BACKGROUND PATTERNS
+   ═══════════════════════════════════════════════════════ */
+
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(253, 218, 143, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(253, 218, 143, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.bg-mesh {
+  background-image: radial-gradient(circle at 20% 30%, rgba(253, 218, 143, 0.05) 0%, transparent 40%),
+                    radial-gradient(circle at 80% 70%, rgba(244, 162, 97, 0.05) 0%, transparent 40%);
+}
+
+.map-grid-overlay {
+  background-image: 
+    linear-gradient(to right, rgba(253, 218, 143, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(253, 218, 143, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   UTILITY STATE CLASSES
+   ═══════════════════════════════════════════════════════ */
+
+.active-role {
+  background-color: #FDDA8F;
+  color: #4A360D;
+}
+
+.otp-input:focus {
+  box-shadow: 0 0 15px rgba(253, 218, 143, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════
+   EXISTING KEYFRAME ANIMATIONS (PRESERVED)
+   ═══════════════════════════════════════════════════════ */
+
+.animate-pulse-slow {
+  animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.3; }
+}
+
+.primary-g.pulse-contract {
+  animation: pulse-border 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes pulse-border {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.pulse-tertiary {
+  animation: pulse-dot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .5; transform: scale(1.2); }
+}
+
+@keyframes scan {
+  from { top: 0; }
+  to { top: 100%; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   SCROLL ANIMATION SYSTEM
+   - Uses .scroll-reveal base class with modifiers
+   ═══════════════════════════════════════════════════════ */
+
+/* Base state: hidden, waiting for JS trigger */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.scroll-reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Direction variants */
+.scroll-reveal-left {
+  opacity: 0;
+  transform: translateX(-48px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.scroll-reveal-left.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.scroll-reveal-right {
+  opacity: 0;
+  transform: translateX(48px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.scroll-reveal-right.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Scale variant */
+.scroll-reveal-scale {
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.scroll-reveal-scale.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Stagger delay helpers (compose with scroll-reveal) */
+.stagger-1 { transition-delay: 0.08s; }
+.stagger-2 { transition-delay: 0.16s; }
+.stagger-3 { transition-delay: 0.24s; }
+.stagger-4 { transition-delay: 0.32s; }
+.stagger-5 { transition-delay: 0.4s; }
+.stagger-6 { transition-delay: 0.48s; }
+
+/* ═══════════════════════════════════════════════════════
+   MICRO-ANIMATION KEYFRAMES
+   ═══════════════════════════════════════════════════════ */
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(253, 218, 143, 0.2); }
+  50% { box-shadow: 0 0 24px rgba(253, 218, 143, 0.45); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes text-gradient-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes slide-down-bounce {
+  0% { transform: translateY(-100%) scale(0.95); opacity: 0; }
+  60% { transform: translateY(3%) scale(1.01); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes fade-up-in {
+  0% { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bounce-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes scroll-indicator {
+  0% { opacity: 0; transform: translateY(-8px); }
+  40% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(8px); }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ANIMATION UTILITY CLASSES
+   ═══════════════════════════════════════════════════════ */
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-float-slow {
+  animation: float-slow 8s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(253, 218, 143, 0) 0%,
+    rgba(253, 218, 143, 0.08) 50%,
+    rgba(253, 218, 143, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+.animate-gradient-shift {
+  background-size: 200% 200%;
+  animation: gradient-shift 4s ease infinite;
+}
+
+.animate-text-gradient {
+  background-size: 200% 200%;
+  animation: text-gradient-flow 4s ease infinite;
+}
+
+.animate-slide-down-bounce {
+  animation: slide-down-bounce 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-up-in {
+  animation: fade-up-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 16s linear infinite;
+}
+
+.animate-bounce-gentle {
+  animation: bounce-gentle 2.5s ease-in-out infinite;
+}
+
+.animate-scroll-indicator {
+  animation: scroll-indicator 2s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════
+   INTERACTIVE HOVER EFFECTS
+   ═══════════════════════════════════════════════════════ */
+
+/* Magnetic hover card - subtle tilt */
+.hover-lift {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hover-lift:hover {
+  transform: none !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(253, 218, 143, 0.08);
+}
+
+/* Glow border on hover */
+.hover-glow-border {
+  position: relative;
+  overflow: hidden;
+}
+.hover-glow-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, transparent, rgba(253, 218, 143, 0.3), transparent);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.hover-glow-border:hover::before {
+  opacity: 1;
+}
+
+/* Gradient button hover shimmer */
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  transition: left 0.5s ease;
+}
+.btn-shimmer:hover::after {
+  left: 100%;
+}
+
+/* Navbar link underline animation */
+.nav-link-animated {
+  position: relative;
+}
+.nav-link-animated::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #FDDA8F, #FFE3A8);
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.nav-link-animated:hover::after {
+  width: 100%;
+}
+
+/* ═══════════════════════════════════════════════════════
+   PAGE TRANSITION
+   ═══════════════════════════════════════════════════════ */
+
+.page-enter {
+  animation: fade-up-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ═══════════════════════════════════════════════════════
+   REDUCED MOTION RESPECT
+   ═══════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal,
+  .scroll-reveal-left,
+  .scroll-reveal-right,
+  .scroll-reveal-scale {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .animate-float,
+  .animate-float-slow,
+  .animate-glow-pulse,
+  .animate-shimmer,
+  .animate-gradient-shift,
+  .animate-bounce-gentle,
+  .animate-scroll-indicator,
+  .animate-spin-slow {
+    animation: none;
+  }
+
+  .hover-lift:hover {
+    transform: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   LIGHT SAND GLASSMORPHISM SYSTEM OVERRIDES
+   ═══════════════════════════════════════════════════════ */
+
+/* Global button and link button styling */
+button, 
+.btn, 
+.btn-shimmer, 
+[role="button"],
+.primary-gradient,
+a[href="#demo"],
+a[href="/register"],
+input[type="submit"] {
+  border: 1px solid rgba(198, 139, 89, 0.3) !important;
+  background: linear-gradient(135deg, #C68B59 0%, #E6CCB2 100%) !important;
+  color: #FFFFFF !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(198, 139, 89, 0.25) !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+button:hover, 
+.btn:hover, 
+.btn-shimmer:hover, 
+[role="button"]:hover,
+.primary-gradient:hover,
+a[href="#demo"]:hover,
+a[href="/register"]:hover {
+  transform: none !important;
+  background: linear-gradient(135deg, #D4A373 0%, #FFE8D6 100%) !important;
+  box-shadow: 0 12px 30px rgba(198, 139, 89, 0.4), 
+              0 0 15px rgba(198, 139, 89, 0.2) !important;
+}
+
+button:active, 
+.btn:active, 
+.btn-shimmer:active, 
+[role="button"]:active,
+.primary-gradient:active,
+a[href="#demo"]:active,
+a[href="/register"]:active {
+  transform: none !important;
+  box-shadow: 0 4px 12px rgba(198, 139, 89, 0.15) !important;
+}
+
+/* Card and Panel Glassmorphism */
+.glass-card, 
+.glass-panel, 
+.bg-surface-container, 
+.bg-surface-variant, 
+.bg-surface-container-high,
+.bg-surface-container-low,
+.bg-surface-container-highest {
+  background: rgba(255, 255, 255, 0.65) !important;
+  border: 1px solid rgba(198, 139, 89, 0.18) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 16px 40px -10px rgba(142, 130, 118, 0.2), 
+              inset 0 1px 1px rgba(255, 255, 255, 0.6) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.glass-card:hover, 
+.glass-panel:hover, 
+.bg-surface-container:hover, 
+.bg-surface-variant:hover,
+.bg-surface-container-high:hover {
+  background: rgba(255, 255, 255, 0.75) !important;
+  border-color: rgba(198, 139, 89, 0.35) !important;
+  box-shadow: 0 24px 50px -12px rgba(142, 130, 118, 0.35), 
+              0 0 20px rgba(198, 139, 89, 0.15) !important;
+  transform: none !important;
+}
+
+/* Form inputs */
+input[type="text"], 
+input[type="email"], 
+input[type="password"], 
+input[type="number"], 
+select, 
+textarea {
+  border: 1px solid rgba(198, 139, 89, 0.2) !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(10px) !important;
+  color: #2A251F !important;
+  border-radius: 8px !important;
+  box-shadow: inset 0 2px 4px rgba(142, 130, 118, 0.08) !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+input[type="text"]:focus, 
+input[type="email"]:focus, 
+input[type="password"]:focus, 
+input[type="number"]:focus, 
+select:focus, 
+textarea:focus {
+  border-color: rgba(198, 139, 89, 0.5) !important;
+  box-shadow: 0 0 15px rgba(198, 139, 89, 0.15), 
+              inset 0 1px 2px rgba(142, 130, 118, 0.05) !important;
+  outline: none !important;
+}
+
+/* Badges / Chips */
+.active-role,
+.rounded-full.border.border-outline-variant\/10,
+.inline-flex.items-center.space-x-2 {
+  border: 1px solid rgba(198, 139, 89, 0.25) !important;
+  border-radius: 9999px !important;
+  background: rgba(198, 139, 89, 0.08) !important;
+  backdrop-filter: blur(5px) !important;
+  color: #C68B59 !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03) !important;
+}
+
+/* Glow effects for premium futuristic feel */
+.text-glow {
+  text-shadow: 0 0 20px rgba(198, 139, 89, 0.2) !important;
+}
+
+.success-glow {
+  box-shadow: 0 0 40px rgba(198, 139, 89, 0.15) !important;
+}
+
+.primary-glow:hover {
+  box-shadow: 0 0 25px rgba(198, 139, 89, 0.2) !important;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #C68B59 0%, #D4A373 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+::-webkit-scrollbar-track {
+  background: #FAF6EE !important;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(198, 139, 89, 0.3) !important;
+  border-radius: 9999px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(198, 139, 89, 0.5) !important;
+}
+
+.bg-grid-pattern {
+  background-image: 
+    linear-gradient(rgba(198, 139, 89, 0.06) 1.5px, transparent 1.5px),
+    linear-gradient(90deg, rgba(198, 139, 89, 0.06) 1.5px, transparent 1.5px);
+  background-size: 40px 40px;
+}
+
+@keyframes globe-spin {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-globe-spin {
+  animation: globe-spin 12s linear infinite;
+}
+
+@keyframes spin-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+.animate-spin-reverse {
+  animation: spin-reverse 20s linear infinite;
+}
+
+
+
