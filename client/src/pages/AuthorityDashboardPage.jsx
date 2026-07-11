@@ -1,14 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-
-// ─── Simulate NFT Mint ────────────────────────────────────────────────────────
-const simulateNFTMint = () => ({
-  hash: '0x' + Array.from({ length: 64 }, () =>
-    Math.floor(Math.random() * 16).toString(16)
-  ).join(''),
-  tokenId: Math.floor(Math.random() * 900000) + 100000,
-});
+import { mintLandNFT } from '../utils/blockchain';
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 const StatusBadge = ({ status }) => {
@@ -38,6 +31,7 @@ const AuthorityDashboardPage = () => {
   const [allLands, setAllLands] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null); // land id being actioned
+  const [mintStatus, setMintStatus] = useState('');
   const [authorityName, setAuthorityName] = useState('Inspector General');
 
   const loadLands = useCallback(async () => {
@@ -71,18 +65,34 @@ const AuthorityDashboardPage = () => {
     navigate('/login');
   };
 
-  // ─── Approve Land ─────────────────────────────────────────────────────────────
+  // ─── Approve Land (Real Blockchain Mint) ─────────────────────────────────────
   const handleApprove = async (land) => {
-    setActionLoading(land.id);
-    try {
-      const { hash, tokenId } = simulateNFTMint();
+    if (!window.ethereum) {
+      alert('MetaMask is required to mint NFTs. Please install MetaMask and connect the contract owner wallet.');
+      return;
+    }
 
-      // Update land status + write NFT data
+    setActionLoading(land.id);
+    setMintStatus('Connecting to MetaMask...');
+
+    try {
+      setMintStatus('Sending transaction to Sepolia blockchain...');
+
+      // Call real smart contract registerLand()
+      const { txHash, tokenId } = await mintLandNFT({
+        citizenAddress: land.owner_address,
+        ipfsMetadataUrl: land.ipfs_metadata_url || land.document_url || '',
+        coordinates: land.coordinates,
+      });
+
+      setMintStatus('Transaction confirmed! Updating database...');
+
+      // Save tx hash + token id to Supabase
       const { error } = await supabase
         .from('land_parcels')
         .update({
           status: 'approved',
-          nft_tx_hash: hash,
+          nft_tx_hash: txHash,
           nft_minted_at: new Date().toISOString(),
           token_id: tokenId,
         })
@@ -90,26 +100,19 @@ const AuthorityDashboardPage = () => {
 
       if (error) throw error;
 
-      // Log 'approved' transaction
-      await supabase.from('land_transactions').insert({
-        land_parcel_id: land.id,
-        seller_address: land.owner_address,
-        event_type: 'approved',
-        amount_eth: 0,
-      });
+      // Log events
+      await supabase.from('land_transactions').insert([
+        { land_parcel_id: land.id, seller_address: land.owner_address, event_type: 'approved', amount_eth: 0 },
+        { land_parcel_id: land.id, seller_address: land.owner_address, event_type: 'minted', amount_eth: 0 },
+      ]);
 
-      // Log 'minted' transaction
-      await supabase.from('land_transactions').insert({
-        land_parcel_id: land.id,
-        seller_address: land.owner_address,
-        event_type: 'minted',
-        amount_eth: 0,
-      });
-
+      setMintStatus('');
+      alert(`✅ NFT Minted on Sepolia!\n\nToken ID: ${tokenId}\nTx Hash: ${txHash.substring(0, 20)}...\n\nView on Etherscan: https://sepolia.etherscan.io/tx/${txHash}`);
       await loadLands();
     } catch (err) {
-      console.error('Approve error:', err);
-      alert('Failed to approve: ' + err.message);
+      console.error('Approve/Mint error:', err);
+      setMintStatus('');
+      alert('❌ Minting failed: ' + err.message);
     } finally {
       setActionLoading(null);
     }
@@ -198,8 +201,12 @@ const AuthorityDashboardPage = () => {
         {/* NFT info if approved */}
         {land.status === 'approved' && land.nft_tx_hash && (
           <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-            <p className="text-xs font-semibold text-green-700 mb-1">NFT Minted ✓</p>
-            <p className="font-mono text-xs text-green-600 break-all">{land.nft_tx_hash.substring(0, 30)}...</p>
+            <p className="text-xs font-semibold text-green-700 mb-1">✅ NFT Minted on Sepolia</p>
+            <p className="font-mono text-xs text-green-600 break-all mb-1">{land.nft_tx_hash.substring(0, 28)}...</p>
+            <a href={`https://sepolia.etherscan.io/tx/${land.nft_tx_hash}`} target="_blank" rel="noreferrer"
+              className="text-xs text-indigo-600 hover:underline flex items-center gap-0.5">
+              View on Etherscan <span className="material-symbols-outlined text-xs">open_in_new</span>
+            </a>
           </div>
         )}
 
@@ -237,7 +244,14 @@ const AuthorityDashboardPage = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
+    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900 relative">
+      {/* Blockchain Minting Status Toast */}
+      {mintStatus && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 animate-fade-up-in">
+          <span className="material-symbols-outlined text-indigo-400 animate-spin text-sm">progress_activity</span>
+          <span className="text-sm font-semibold">{mintStatus}</span>
+        </div>
+      )}
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex sticky top-0 h-screen">
         <div className="p-6 border-b border-slate-100">

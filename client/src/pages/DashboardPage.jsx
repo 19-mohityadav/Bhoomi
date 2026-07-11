@@ -1,457 +1,789 @@
-import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { mintLandNFT, getWalletBalance } from '../utils/blockchain';
 
+// ─── Pinata Upload ────────────────────────────────────────────────────────────
+const pinataUpload = async (file, name) => {
+  const jwt = import.meta.env.VITE_PINATA_JWT;
+  const form = new FormData();
+  form.append('file', file);
+  form.append('pinataMetadata', JSON.stringify({ name }));
+  const res = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${jwt}` },
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Pinata upload failed for ${name}`);
+  const data = await res.json();
+  return `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
+};
+
+const pinataUploadJSON = async (jsonObj, name) => {
+  const jwt = import.meta.env.VITE_PINATA_JWT;
+  const res = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ pinataMetadata: { name }, pinataContent: jsonObj }),
+  });
+  if (!res.ok) throw new Error('Pinata JSON upload failed');
+  const data = await res.json();
+  return `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
+};
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   { icon: 'dashboard', label: 'Dashboard', id: 'dashboard' },
   { icon: 'landscape', label: 'My Lands', id: 'my-lands' },
   { icon: 'cloud_upload', label: 'Upload Land', id: 'upload-land' },
   { icon: 'token', label: 'NFT Holdings', id: 'nft-holdings' },
-  { icon: 'shopping_cart', label: 'Marketplace', id: 'marketplace' },
-  { icon: 'history', label: 'Transaction History', id: 'tx-history' },
+  { icon: 'receipt_long', label: 'Transaction History', id: 'tx-history' },
 ];
 
-const GlassCard = ({ children, className = '' }) => {
-  const cardRef = useRef(null);
-
-  const handleMouseMove = (e) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    cardRef.current.style.setProperty('--mouse-x', `${x}px`);
-    cardRef.current.style.setProperty('--mouse-y', `${y}px`);
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+const StatusBadge = ({ status }) => {
+  const map = {
+    pending:  { bg: 'bg-amber-500/20', text: 'text-amber-400', border: 'border-amber-500/30' },
+    approved: { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30' },
+    rejected: { bg: 'bg-red-500/20',   text: 'text-red-400',   border: 'border-red-500/30'   },
+    minted:   { bg: 'bg-purple-500/20',text: 'text-purple-400',border: 'border-purple-500/30'},
+    upload:   { bg: 'bg-slate-500/20', text: 'text-slate-400', border: 'border-slate-500/30' },
+    sold:     { bg: 'bg-teal-500/20',  text: 'text-teal-400',  border: 'border-teal-500/30'  },
   };
-
+  const s = map[status] || map.pending;
   return (
-    <div
-      ref={cardRef}
-      onMouseMove={handleMouseMove}
-      className={`glass-card rounded-lg ${className}`}
-    >
+    <span className={`px-2.5 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-widest ${s.bg} ${s.text} ${s.border}`}>
+      {status}
+    </span>
+  );
+};
+
+// ─── GlassCard ────────────────────────────────────────────────────────────────
+const GlassCard = ({ children, className = '' }) => {
+  const ref = useRef(null);
+  const handleMouseMove = (e) => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    ref.current.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
+    ref.current.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+  };
+  return (
+    <div ref={ref} onMouseMove={handleMouseMove} className={`glass-card rounded-lg ${className}`}>
       {children}
     </div>
   );
 };
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
 const DashboardPage = () => {
   const navigate = useNavigate();
   const [activeNav, setActiveNav] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
-  // Supabase states
-  const [userProfile, setUserProfile] = useState({
-    fullName: 'Alex Sterling',
-    role: 'seller',
-    walletAddress: '0x82f0a1e3e920d3f2c5d144888fca02d18492031',
-    id: null
-  });
-  const [stats, setStats] = useState({
-    totalLands: 12,
-    nftsOwned: 8,
-    pendingVerifications: 2
-  });
-  const [myProperties, setMyProperties] = useState([]);
+  // ── Auth & Profile ──
+  const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      setLoading(true);
+  // ── Wallet ──
+  const [walletAddress, setWalletAddress] = useState(null);
+  const [ethBalance, setEthBalance] = useState(null);
+  const [walletConnecting, setWalletConnecting] = useState(false);
+
+  // ── Data ──
+  const [myLands, setMyLands] = useState([]);
+  const [myNFTs, setMyNFTs] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+
+  // ── Upload Form ──
+  const [form, setForm] = useState({ landName: '', description: '', areaSqft: '', coordinates: '', price: '' });
+  const [files, setFiles] = useState({ image: null, deed: null, agreement: null, registry: null });
+  const [uploadStep, setUploadStep] = useState(''); // status message
+  const [uploading, setUploading] = useState(false);
+
+  // ─── Load Profile ─────────────────────────────────────────────────────────────
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { navigate('/login'); return; }
+
+    const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    setUserProfile(prof);
+
+    const addr = prof?.wallet_address;
+    if (addr) {
+      setWalletAddress(addr);
+      getWalletBalance(addr).then(setEthBalance);
+
+      // Load lands
+      const { data: lands } = await supabase
+        .from('land_parcels').select('*').eq('owner_address', addr).order('created_at', { ascending: false });
+      if (lands) {
+        setMyLands(lands);
+        setMyNFTs(lands.filter(l => l.status === 'approved' && l.nft_tx_hash));
+      }
+
+      // Load transactions
+      const { data: txs } = await supabase
+        .from('land_transactions').select('*').eq('seller_address', addr).order('created_at', { ascending: false });
+      if (txs) setTransactions(txs);
+    }
+    setLoading(false);
+  }, [navigate]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // ─── Connect MetaMask Wallet ──────────────────────────────────────────────────
+  const connectWallet = async () => {
+    if (!window.ethereum) {
+      alert('MetaMask is not installed. Please install it from metamask.io');
+      return;
+    }
+    setWalletConnecting(true);
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const addr = accounts[0];
+
+      // Save to Supabase profile
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setLoading(false);
-        return; // Fallback to mock data
+      if (user) {
+        await supabase.from('profiles').update({ wallet_address: addr }).eq('id', user.id);
       }
 
-      // Fetch user profile from Supabase profiles table
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      setWalletAddress(addr);
+      getWalletBalance(addr).then(setEthBalance);
 
-      if (profile) {
-        setUserProfile({
-          fullName: profile.full_name || 'Anonymous User',
-          role: profile.role || 'buyer',
-          walletAddress: profile.wallet_address || '0x0000000000000000000000000000000000000000',
-          id: profile.id
-        });
-
-        // Query property counts
-        const { count: landsCount } = await supabase
-          .from('properties')
-          .select('*', { count: 'exact', head: true })
-          .eq('owner_id', user.id);
-
-        // Query active NFT holdings count
-        const { count: nftsCount } = await supabase
-          .from('properties')
-          .select('*', { count: 'exact', head: true })
-          .eq('owner_id', user.id)
-          .not('token_id', 'is', null);
-
-        // Query pending application verifications
-        const { count: pendingCount } = await supabase
-          .from('land_applications')
-          .select('*', { count: 'exact', head: true })
-          .eq('applicant_id', user.id)
-          .eq('status', 'pending');
-
-        setStats({
-          totalLands: landsCount || 0,
-          nftsOwned: nftsCount || 0,
-          pendingVerifications: pendingCount || 0
-        });
-
-        // Retrieve the list of owned properties
-        const { data: props } = await supabase
-          .from('properties')
-          .select('*')
-          .eq('owner_id', user.id);
-
-        if (props && props.length > 0) {
-          setMyProperties(props);
-        }
+      // Reload lands
+      const { data: lands } = await supabase
+        .from('land_parcels').select('*').eq('owner_address', addr).order('created_at', { ascending: false });
+      if (lands) {
+        setMyLands(lands);
+        setMyNFTs(lands.filter(l => l.status === 'approved' && l.nft_tx_hash));
       }
-      setLoading(false);
-    };
+    } catch (err) {
+      console.error(err);
+      alert('Wallet connection failed: ' + err.message);
+    } finally {
+      setWalletConnecting(false);
+    }
+  };
 
-    fetchUserData();
-  }, []);
-
-  useEffect(() => {
-    // Tick the block number up subtly
-    const el = document.getElementById('block-ticker');
-    if (!el) return;
-    let n = 18492031;
-    const iv = setInterval(() => {
-      n += Math.floor(Math.random() * 3);
-      if (el) el.textContent = `#${n.toLocaleString()}`;
-    }, 4000);
-    return () => clearInterval(iv);
-  }, []);
-
+  // ─── Logout ───────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate('/login');
   };
 
+  // ─── Format wallet ────────────────────────────────────────────────────────────
+  const fmt = (addr) => addr ? `${addr.substring(0, 6)}...${addr.slice(-4)}` : '';
+
+  // ─── Upload Land Handler ──────────────────────────────────────────────────────
+  const handleUploadLand = async (e) => {
+    e.preventDefault();
+    if (!walletAddress) { alert('Please connect your wallet first.'); return; }
+    if (!files.image || !files.deed) { alert('Land photo and Title Deed are required.'); return; }
+
+    setUploading(true);
+    try {
+      setUploadStep('📤 Uploading land photo to IPFS...');
+      const imageUrl = await pinataUpload(files.image, `land-image-${Date.now()}`);
+
+      setUploadStep('📄 Uploading Title Deed to IPFS...');
+      const deedUrl = await pinataUpload(files.deed, `deed-${Date.now()}`);
+
+      let agreementUrl = null, registryUrl = null;
+
+      if (files.agreement) {
+        setUploadStep('📄 Uploading Agreement to IPFS...');
+        agreementUrl = await pinataUpload(files.agreement, `agreement-${Date.now()}`);
+      }
+      if (files.registry) {
+        setUploadStep('📄 Uploading Registry Paper to IPFS...');
+        registryUrl = await pinataUpload(files.registry, `registry-${Date.now()}`);
+      }
+
+      setUploadStep('🔗 Creating NFT metadata on IPFS...');
+      const metadata = {
+        name: form.landName,
+        description: form.description,
+        coordinates: form.coordinates,
+        area_sqft: parseFloat(form.areaSqft) || 0,
+        image: imageUrl,
+        attributes: [
+          { trait_type: 'Status', value: 'Pending Verification' },
+          { trait_type: 'Area', value: `${form.areaSqft} sqft` },
+          { trait_type: 'Coordinates', value: form.coordinates },
+        ],
+      };
+      const metadataUrl = await pinataUploadJSON(metadata, `metadata-${Date.now()}`);
+
+      setUploadStep('💾 Saving to database...');
+      const tokenId = Math.floor(Math.random() * 900000) + 100000;
+      const { data: inserted, error } = await supabase.from('land_parcels').insert({
+        owner_address: walletAddress,
+        coordinates: form.coordinates || '0° N, 0° E',
+        ipfs_metadata_url: metadataUrl,
+        price: parseFloat(form.price) || 0,
+        is_for_sale: false,
+        token_id: tokenId,
+        land_name: form.landName,
+        description: form.description,
+        area_sqft: parseFloat(form.areaSqft) || 0,
+        land_image_url: imageUrl,
+        deed_url: deedUrl,
+        agreement_url: agreementUrl,
+        registry_url: registryUrl,
+        status: 'pending',
+      }).select().single();
+
+      if (error) throw error;
+
+      await supabase.from('land_transactions').insert({
+        land_parcel_id: inserted.id,
+        seller_address: walletAddress,
+        event_type: 'upload',
+        amount_eth: 0,
+      });
+
+      setUploadStep('✅ Submitted! Awaiting authority review.');
+      setForm({ landName: '', description: '', areaSqft: '', coordinates: '', price: '' });
+      setFiles({ image: null, deed: null, agreement: null, registry: null });
+
+      await loadAll();
+      setTimeout(() => { setUploadStep(''); setActiveNav('my-lands'); }, 2500);
+    } catch (err) {
+      console.error(err);
+      setUploadStep(`❌ Error: ${err.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ─── Stats ────────────────────────────────────────────────────────────────────
+  const stats = {
+    total: myLands.length,
+    nfts: myNFTs.length,
+    pending: myLands.filter(l => l.status === 'pending').length,
+  };
+
+  // ─── Loading ──────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center">
+        <div className="text-center">
+          <span className="material-symbols-outlined text-5xl text-primary animate-spin">progress_activity</span>
+          <p className="text-on-surface-variant mt-3 text-sm font-medium">Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // TAB RENDERERS
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // ── Dashboard Overview ────────────────────────────────────────────────────────
+  const renderDashboard = () => (
+    <div className="space-y-8">
+      {/* Wallet Not Connected Banner */}
+      {!walletAddress && (
+        <div className="glass-card rounded-lg p-6 border border-primary/20 flex flex-col sm:flex-row items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <span className="material-symbols-outlined text-3xl text-primary">account_balance_wallet</span>
+          </div>
+          <div className="flex-1 text-center sm:text-left">
+            <h4 className="font-bold text-on-surface text-lg">Connect Your Wallet</h4>
+            <p className="text-on-surface-variant text-sm mt-0.5">Connect MetaMask to upload lands, receive NFTs, and track your portfolio.</p>
+          </div>
+          <button onClick={connectWallet} disabled={walletConnecting}
+            className="primary-gradient text-on-primary-container px-6 py-3 rounded-md font-bold flex items-center gap-2 whitespace-nowrap btn-shimmer disabled:opacity-60">
+            {walletConnecting ? <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span> : <span className="material-symbols-outlined text-sm">link</span>}
+            {walletConnecting ? 'Connecting...' : 'Connect MetaMask'}
+          </button>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {[
+          { label: 'Total Lands Registered', value: stats.total, sub: 'Active Assets', color: 'primary' },
+          { label: 'NFTs Minted', value: stats.nfts, sub: 'On-Chain Deeds', color: 'secondary' },
+          { label: 'Pending Verifications', value: stats.pending, sub: 'Awaiting Authority', color: 'tertiary' },
+        ].map(s => (
+          <GlassCard key={s.label} className="p-8 relative overflow-hidden group hover-lift">
+            <div className={`absolute -right-4 -top-4 w-24 h-24 bg-${s.color}/10 rounded-full blur-3xl transition-all group-hover:bg-${s.color}/20`} />
+            <p className="text-on-surface-variant font-label text-xs uppercase tracking-[0.2em] mb-2">{s.label}</p>
+            <div className="flex items-end gap-3">
+              <span className="text-5xl font-display font-bold text-on-surface">{s.value}</span>
+              <span className={`text-${s.color}-dim font-label text-sm mb-2`}>{s.sub}</span>
+            </div>
+            <div className="mt-6 h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
+              <div className={`h-full ${s.value > 0 ? 'w-3/4' : 'w-0'} bg-${s.color} rounded-full transition-all duration-700`} />
+            </div>
+          </GlassCard>
+        ))}
+      </div>
+
+      {/* Recent Lands */}
+      <div>
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-2xl font-display font-bold">Recent Lands</h3>
+          <button onClick={() => setActiveNav('upload-land')}
+            className="primary-gradient text-on-primary-container px-5 py-2.5 rounded-md font-bold flex items-center gap-2 text-sm btn-shimmer">
+            <span className="material-symbols-outlined text-sm">add</span> Upload New Land
+          </button>
+        </div>
+        {myLands.length === 0 ? (
+          <GlassCard className="p-16 text-center">
+            <span className="material-symbols-outlined text-6xl text-on-surface-variant/30 mb-4">landscape</span>
+            <p className="text-on-surface-variant font-medium">You haven't registered any land yet.</p>
+            <button onClick={() => setActiveNav('upload-land')} className="mt-4 text-primary text-sm font-bold hover:underline">
+              Upload your first land →
+            </button>
+          </GlassCard>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {myLands.slice(0, 6).map(land => <LandCard key={land.id} land={land} />)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── My Lands ──────────────────────────────────────────────────────────────────
+  const LandCard = ({ land }) => (
+    <GlassCard className="overflow-hidden group hover-lift">
+      <div className="h-40 relative overflow-hidden bg-surface-container">
+        {land.land_image_url ? (
+          <img src={land.land_image_url} alt={land.land_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="material-symbols-outlined text-5xl text-on-surface-variant/20">landscape</span>
+          </div>
+        )}
+        <div className="absolute top-3 right-3">
+          <StatusBadge status={land.status || 'pending'} />
+        </div>
+        {land.status === 'approved' && land.nft_tx_hash && (
+          <div className="absolute top-3 left-3 bg-primary/80 backdrop-blur px-2 py-0.5 rounded-full text-[10px] font-bold text-on-primary flex items-center gap-1">
+            <span className="material-symbols-outlined text-xs">token</span> NFT
+          </div>
+        )}
+      </div>
+      <div className="p-5">
+        <h5 className="font-display font-bold text-lg text-on-surface truncate mb-0.5">{land.land_name || `Land #${land.token_id}`}</h5>
+        <p className="text-xs text-on-surface-variant flex items-center gap-1 mb-2">
+          <span className="material-symbols-outlined text-xs">location_on</span>{land.coordinates}
+        </p>
+        {land.area_sqft > 0 && (
+          <p className="text-xs text-on-surface-variant flex items-center gap-1 mb-3">
+            <span className="material-symbols-outlined text-xs">square_foot</span>{land.area_sqft.toLocaleString()} sq. ft
+          </p>
+        )}
+        {land.status === 'rejected' && land.authority_notes && (
+          <p className="text-xs text-red-400 bg-red-500/10 rounded p-2 mb-3">{land.authority_notes}</p>
+        )}
+        <div className="flex items-center justify-between pt-3 border-t border-outline-variant/10">
+          <span className="text-primary font-bold text-sm">{land.price || 0} ETH</span>
+          <div className="flex items-center gap-2">
+            {land.deed_url && (
+              <a href={land.deed_url} target="_blank" rel="noreferrer" className="text-xs text-on-surface-variant hover:text-primary transition-colors flex items-center gap-0.5">
+                Deed <span className="material-symbols-outlined text-xs">open_in_new</span>
+              </a>
+            )}
+            {land.nft_tx_hash && (
+              <a href={`https://sepolia.etherscan.io/tx/${land.nft_tx_hash}`} target="_blank" rel="noreferrer"
+                className="text-xs text-primary hover:underline flex items-center gap-0.5">
+                Etherscan <span className="material-symbols-outlined text-xs">open_in_new</span>
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </GlassCard>
+  );
+
+  const renderMyLands = () => (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h3 className="text-3xl font-display font-bold">My Lands</h3>
+          <p className="text-on-surface-variant text-sm mt-1">{myLands.length} land{myLands.length !== 1 ? 's' : ''} registered</p>
+        </div>
+        <button onClick={() => setActiveNav('upload-land')}
+          className="primary-gradient text-on-primary-container px-5 py-2.5 rounded-md font-bold flex items-center gap-2 text-sm btn-shimmer">
+          <span className="material-symbols-outlined text-sm">add</span> Upload Land
+        </button>
+      </div>
+
+      {myLands.length === 0 ? (
+        <GlassCard className="p-20 text-center">
+          <span className="material-symbols-outlined text-7xl text-on-surface-variant/20 mb-4">landscape</span>
+          <p className="text-on-surface-variant text-lg font-medium">You don't have any land yet.</p>
+          <p className="text-on-surface-variant/50 text-sm mt-1 mb-5">Upload your first land to get started.</p>
+          <button onClick={() => setActiveNav('upload-land')} className="primary-gradient text-on-primary-container px-6 py-3 rounded-md font-bold btn-shimmer">
+            Upload Land
+          </button>
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {myLands.map(land => <LandCard key={land.id} land={land} />)}
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Upload Land ────────────────────────────────────────────────────────────────
+  const renderUploadLand = () => {
+    if (!walletAddress) {
+      return (
+        <div className="max-w-lg mx-auto mt-20 text-center">
+          <GlassCard className="p-12">
+            <span className="material-symbols-outlined text-6xl text-primary/50 mb-4">account_balance_wallet</span>
+            <h3 className="text-2xl font-display font-bold mb-2">Wallet Required</h3>
+            <p className="text-on-surface-variant text-sm mb-6">Connect your MetaMask wallet to upload and register land.</p>
+            <button onClick={connectWallet} disabled={walletConnecting}
+              className="primary-gradient text-on-primary-container px-8 py-3 rounded-md font-bold btn-shimmer flex items-center gap-2 mx-auto">
+              <span className="material-symbols-outlined text-sm">link</span>
+              Connect MetaMask
+            </button>
+          </GlassCard>
+        </div>
+      );
+    }
+
+    return (
+      <form onSubmit={handleUploadLand} className="max-w-2xl mx-auto">
+        <GlassCard className="overflow-hidden">
+          <div className="px-8 py-6 border-b border-outline-variant/10 bg-primary/5">
+            <h3 className="text-2xl font-display font-bold text-on-surface">Register New Land</h3>
+            <p className="text-on-surface-variant text-sm mt-1">Submit your land details and documents to the Government Authority for verification.</p>
+            <div className="mt-3 flex items-center gap-2 text-xs text-primary bg-primary/10 rounded px-3 py-1.5 w-fit border border-primary/20">
+              <span className="material-symbols-outlined text-sm">account_balance_wallet</span>
+              {fmt(walletAddress)}
+            </div>
+          </div>
+
+          <div className="p-8 space-y-6">
+            {/* Text Fields */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Land Name *</label>
+                <input required type="text" value={form.landName}
+                  onChange={e => setForm(f => ({ ...f, landName: e.target.value }))}
+                  placeholder="e.g. Green Valley Plot"
+                  className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-on-surface-variant/40" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Area (sq. ft) *</label>
+                <input required type="number" value={form.areaSqft}
+                  onChange={e => setForm(f => ({ ...f, areaSqft: e.target.value }))}
+                  placeholder="e.g. 5000"
+                  className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-on-surface-variant/40" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">GPS Coordinates *</label>
+              <input required type="text" value={form.coordinates}
+                onChange={e => setForm(f => ({ ...f, coordinates: e.target.value }))}
+                placeholder="e.g. 28.6139° N, 77.2090° E"
+                className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-on-surface-variant/40" />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Description</label>
+              <textarea rows={3} value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                placeholder="Describe the land: type, location, features..."
+                className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-on-surface-variant/40 resize-none" />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Asking Price (ETH)</label>
+              <input type="number" step="0.01" value={form.price}
+                onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
+                placeholder="e.g. 2.5"
+                className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-on-surface-variant/40" />
+            </div>
+
+            {/* Document Uploads */}
+            <div>
+              <p className="text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-3">Documents</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {[
+                  { key: 'image', label: '📸 Land Photo *', required: true, accept: 'image/*' },
+                  { key: 'deed', label: '📄 Title Deed *', required: true, accept: '.pdf,.jpg,.jpeg,.png' },
+                  { key: 'agreement', label: '📋 Sale Agreement', required: false, accept: '.pdf,.jpg,.jpeg,.png' },
+                  { key: 'registry', label: '🏛️ Registry Paper', required: false, accept: '.pdf,.jpg,.jpeg,.png' },
+                ].map(({ key, label, required, accept }) => (
+                  <label key={key}
+                    className={`border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer transition-colors text-center ${files[key] ? 'border-primary/50 bg-primary/5' : 'border-outline-variant/20 hover:border-primary/30 hover:bg-primary/5'}`}>
+                    <span className="text-sm font-medium text-on-surface-variant mb-1">{label}</span>
+                    {files[key] ? (
+                      <span className="text-xs text-primary font-semibold">{files[key].name}</span>
+                    ) : (
+                      <span className="text-xs text-on-surface-variant/50">Click to upload</span>
+                    )}
+                    <input type="file" accept={accept} className="hidden"
+                      onChange={e => setFiles(f => ({ ...f, [key]: e.target.files[0] }))} />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Authority Notice */}
+            <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 rounded-lg p-4">
+              <span className="material-symbols-outlined text-amber-400 text-xl mt-0.5">info</span>
+              <p className="text-xs text-amber-200/80">All 4 documents are uploaded to IPFS (permanent, decentralized). The Government Authority will review your submission and approve NFT minting. You will see the NFT in your Holdings once approved.</p>
+            </div>
+
+            {/* Status Message */}
+            {uploadStep && (
+              <div className={`text-sm font-medium text-center py-3 rounded-lg border ${
+                uploadStep.startsWith('✅') ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                uploadStep.startsWith('❌') ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                'bg-primary/10 text-primary border-primary/20'
+              }`}>
+                {uploadStep}
+              </div>
+            )}
+
+            <button type="submit" disabled={uploading}
+              className="w-full py-4 primary-gradient text-on-primary-container rounded-md font-bold btn-shimmer flex items-center justify-center gap-2 disabled:opacity-60 shadow-[0_10px_30px_rgba(0,238,252,0.15)]">
+              {uploading ? (
+                <><span className="material-symbols-outlined text-sm animate-spin">progress_activity</span> Uploading to IPFS...</>
+              ) : (
+                <><span className="material-symbols-outlined text-sm">send</span> Submit to Authority</>
+              )}
+            </button>
+          </div>
+        </GlassCard>
+      </form>
+    );
+  };
+
+  // ── NFT Holdings ──────────────────────────────────────────────────────────────
+  const renderNFTHoldings = () => (
+    <div>
+      <div className="mb-6">
+        <h3 className="text-3xl font-display font-bold">NFT Holdings</h3>
+        <p className="text-on-surface-variant text-sm mt-1">Government-verified, blockchain-minted land NFTs on Sepolia</p>
+      </div>
+
+      {myNFTs.length === 0 ? (
+        <GlassCard className="p-20 text-center">
+          <span className="material-symbols-outlined text-7xl text-on-surface-variant/20 mb-4">token</span>
+          <p className="text-on-surface-variant text-lg font-medium">No NFTs minted yet.</p>
+          <p className="text-on-surface-variant/50 text-sm mt-1">Upload land and wait for authority approval to receive your NFT.</p>
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {myNFTs.map(nft => (
+            <GlassCard key={nft.id} className="overflow-hidden group hover-lift border border-primary/10">
+              <div className="h-44 bg-gradient-to-br from-primary/20 via-secondary/10 to-tertiary/20 flex items-center justify-center relative">
+                {nft.land_image_url ? (
+                  <img src={nft.land_image_url} alt={nft.land_name} className="w-full h-full object-cover opacity-50 group-hover:opacity-70 transition-opacity" />
+                ) : null}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <p className="text-xs font-label text-primary/70 uppercase tracking-widest">Bhoomi NFT</p>
+                    <p className="text-4xl font-display font-bold text-primary">#{nft.token_id}</p>
+                  </div>
+                </div>
+                <div className="absolute top-3 right-3 bg-secondary-container/90 text-on-secondary-container text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                  <span className="material-symbols-outlined text-xs">verified</span> Verified
+                </div>
+              </div>
+              <div className="p-5">
+                <h5 className="font-display font-bold text-lg text-on-surface truncate mb-1">{nft.land_name || `Land NFT #${nft.token_id}`}</h5>
+                <p className="text-xs text-on-surface-variant flex items-center gap-1 mb-3">
+                  <span className="material-symbols-outlined text-xs">location_on</span>{nft.coordinates}
+                </p>
+                <div className="bg-surface-container-lowest rounded-lg p-3 border border-outline-variant/10 mb-3">
+                  <p className="text-[10px] font-label text-on-surface-variant uppercase tracking-widest mb-1">Transaction Hash</p>
+                  <p className="font-mono text-xs text-primary break-all">{nft.nft_tx_hash?.substring(0, 22)}...</p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-primary font-bold">{nft.price || 0} ETH</span>
+                  <a href={`https://sepolia.etherscan.io/tx/${nft.nft_tx_hash}`} target="_blank" rel="noreferrer"
+                    className="text-xs text-primary hover:underline flex items-center gap-0.5 font-label font-bold">
+                    Etherscan <span className="material-symbols-outlined text-xs">open_in_new</span>
+                  </a>
+                </div>
+                {nft.nft_minted_at && (
+                  <p className="text-[10px] text-on-surface-variant/50 mt-2">Minted {new Date(nft.nft_minted_at).toLocaleDateString()}</p>
+                )}
+              </div>
+            </GlassCard>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Transaction History ────────────────────────────────────────────────────────
+  const renderTransactions = () => (
+    <div>
+      <div className="mb-6">
+        <h3 className="text-3xl font-display font-bold">Transaction History</h3>
+        <p className="text-on-surface-variant text-sm mt-1">All your land registration events and transfers</p>
+      </div>
+
+      <GlassCard className="overflow-hidden">
+        {transactions.length === 0 ? (
+          <div className="p-20 text-center">
+            <span className="material-symbols-outlined text-7xl text-on-surface-variant/20 mb-4">receipt_long</span>
+            <p className="text-on-surface-variant text-lg font-medium">You haven't done any transactions yet.</p>
+            <p className="text-on-surface-variant/50 text-sm mt-1">Upload your first land to start your transaction history.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-outline-variant/10">
+              <thead className="bg-surface-container-lowest">
+                <tr>
+                  {['Event', 'Land ID', 'Amount', 'Counterparty', 'Date'].map(h => (
+                    <th key={h} className="px-6 py-4 text-left text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-widest">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-outline-variant/5">
+                {transactions.map(tx => (
+                  <tr key={tx.id} className="hover:bg-surface-container-lowest/50 transition-colors">
+                    <td className="px-6 py-4"><StatusBadge status={tx.event_type} /></td>
+                    <td className="px-6 py-4 text-sm text-on-surface-variant font-mono">#{tx.land_parcel_id || '—'}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-on-surface">
+                      {tx.amount_eth > 0 ? `${tx.amount_eth} ETH` : '—'}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-on-surface-variant font-mono">
+                      {tx.buyer_address ? `${tx.buyer_address.substring(0, 8)}...` : '—'}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-on-surface-variant">{new Date(tx.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </GlassCard>
+    </div>
+  );
+
+  // ─── RENDER ───────────────────────────────────────────────────────────────────
   return (
-    <div className="bg-surface text-on-surface font-body min-h-screen selection:bg-primary/20 relative page-enter">
-      {/* Grid Background */}
+    <div className="bg-surface text-on-surface font-body min-h-screen relative page-enter">
       <div className="fixed inset-0 grid-bg pointer-events-none z-0" />
 
       {/* ─── Sidebar ─── */}
-      <nav
-        className={`fixed left-0 top-0 h-screen w-72 bg-surface-variant/40 backdrop-blur-xl shadow-[0_20px_40px_rgba(0,0,0,0.4)]
-          flex flex-col py-8 px-6 z-50 overflow-hidden
-          transition-transform duration-300
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
-      >
+      <nav className={`fixed left-0 top-0 h-screen w-72 bg-surface-variant/40 backdrop-blur-xl shadow-[0_20px_40px_rgba(0,0,0,0.4)]
+        flex flex-col py-8 px-6 z-50 overflow-hidden transition-transform duration-300
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+
         {/* Brand */}
-        <div className="mb-12">
+        <div className="mb-10">
           <h1 className="text-2xl font-display font-bold tracking-tighter text-primary">Bhoomi</h1>
+          <p className="text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5 font-label">Land Registry</p>
         </div>
 
-        {/* Nav Links */}
+        {/* Wallet in Sidebar */}
+        <div className="mb-6">
+          {walletAddress ? (
+            <div className="glass-card rounded-lg p-4 border border-primary/20">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+                <p className="text-[10px] font-label font-bold text-green-400 uppercase tracking-widest">Wallet Connected</p>
+              </div>
+              <p className="font-mono text-sm text-on-surface font-bold">{fmt(walletAddress)}</p>
+              {ethBalance && (
+                <p className="text-xs text-primary font-bold mt-1">{ethBalance} ETH <span className="text-on-surface-variant font-normal">(Sepolia)</span></p>
+              )}
+            </div>
+          ) : (
+            <button onClick={connectWallet} disabled={walletConnecting}
+              className="w-full primary-gradient text-on-primary-container px-4 py-3 rounded-md font-bold flex items-center justify-center gap-2 text-sm btn-shimmer disabled:opacity-60">
+              {walletConnecting ? <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span> : <span className="material-symbols-outlined text-sm">link</span>}
+              {walletConnecting ? 'Connecting...' : 'Connect Wallet'}
+            </button>
+          )}
+        </div>
+
+        {/* Nav */}
         <div className="flex flex-col gap-1 flex-grow">
           {NAV_ITEMS.map(item => (
-            <button
-              key={item.id}
+            <button key={item.id}
               onClick={() => { setActiveNav(item.id); setSidebarOpen(false); }}
               className={`flex items-center gap-4 px-4 py-3 rounded-md transition-all duration-300 active:scale-95 text-left w-full
                 ${activeNav === item.id
-                  ? 'text-primary font-bold border-r-2 border-primary-container bg-primary/5'
-                  : 'text-on-surface-variant font-medium hover:text-primary hover:bg-primary/5'}`}
-            >
+                  ? 'text-primary font-bold border-r-2 border-primary bg-primary/5'
+                  : 'text-on-surface-variant font-medium hover:text-primary hover:bg-primary/5'}`}>
               <span className="material-symbols-outlined">{item.icon}</span>
               <span className="font-headline tracking-wide">{item.label}</span>
             </button>
           ))}
         </div>
 
-        {/* Settings */}
-        <button
-          onClick={() => setActiveNav('settings')}
-          className={`flex items-center gap-4 px-4 py-3 rounded-md transition-all duration-300 active:scale-95 text-left w-full mt-4
-            ${activeNav === 'settings'
-              ? 'text-primary font-bold border-r-2 border-primary-container bg-primary/5'
-              : 'text-on-surface-variant font-medium hover:text-primary hover:bg-primary/5'}`}
-        >
-          <span className="material-symbols-outlined">settings</span>
-          <span className="font-headline tracking-wide">Settings</span>
-        </button>
-
-        {/* User Profile display card */}
-        <div className="mt-8 pt-8 border-t border-outline-variant/20 flex items-center gap-4">
-          <img
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuA-DjRoCwQ23L6FPeXQfBrHiZhyhQ2HKW18NqSbIULJuhkZ1u3mpwDC2xy-O40IE_VNJxHsURMtxo3UPOxtDOQlKzIJPZgqC2Gbfw3TC09-4ihB7UmDbChB6PDe2cL9pbUSznRuShAq6bDFBK1cd10fa0cn7awvU_FqrN9EFoD02CRN_os4NvlZDhlTuUS4AYLTvFM13SC4g1P-6Iq71HJNTlafN7NfCPoVwxW4mgonsDKrfwTyppUZzHnPaIgIbyAuswh2RnB4A9gc"
-            alt="User Profile Avatar"
-            className="w-10 h-10 rounded-full border border-primary/30 flex-shrink-0"
-          />
-          <div className="overflow-hidden">
-            <p className="text-sm font-bold text-on-surface truncate">{userProfile.fullName}</p>
-            <p className="text-[10px] font-label text-on-surface-variant uppercase tracking-tighter">
-              ID: {userProfile.walletAddress ? `${userProfile.walletAddress.substring(0, 7)}...${userProfile.walletAddress.substring(37)}` : 'No Wallet'}
-            </p>
+        {/* User Profile */}
+        <div className="mt-6 pt-6 border-t border-outline-variant/20 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary flex-shrink-0">
+            {(userProfile?.full_name || 'U').charAt(0).toUpperCase()}
           </div>
-          <button
-            onClick={handleLogout}
-            title="Logout"
-            className="ml-auto text-on-surface-variant hover:text-error transition-colors"
-          >
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-on-surface truncate">{userProfile?.full_name || 'User'}</p>
+            <p className="text-[10px] font-label text-on-surface-variant uppercase tracking-tight capitalize">{userProfile?.role || 'seller'}</p>
+          </div>
+          <button onClick={handleLogout} title="Logout" className="text-on-surface-variant hover:text-error transition-colors">
             <span className="material-symbols-outlined text-sm">logout</span>
           </button>
         </div>
       </nav>
 
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      {/* Mobile overlay */}
+      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
-      {/* ─── Main Canvas ─── */}
+      {/* ─── Main Content ─── */}
       <main className="md:ml-72 min-h-screen relative z-10">
-
-        {/* Top App Bar */}
-        <header className="sticky top-0 right-0 w-full h-20 bg-surface/60 backdrop-blur-md flex justify-between items-center px-6 md:px-10 z-40 border-b border-outline-variant/10">
+        {/* Top Bar */}
+        <header className="sticky top-0 w-full h-20 bg-surface/60 backdrop-blur-md flex justify-between items-center px-6 md:px-10 z-40 border-b border-outline-variant/10">
           <div className="flex items-center gap-4">
-            {/* Hamburger for mobile */}
-            <button
-              className="md:hidden text-on-surface-variant hover:text-primary transition-colors"
-              onClick={() => setSidebarOpen(v => !v)}
-            >
+            <button className="md:hidden text-on-surface-variant hover:text-primary transition-colors" onClick={() => setSidebarOpen(v => !v)}>
               <span className="material-symbols-outlined">menu</span>
             </button>
             <h2 className="text-xl font-headline font-black text-primary tracking-tight">
-              {userProfile.role === 'seller' ? 'Land Owner Dashboard' : 'Property Buyer Dashboard'}
+              {NAV_ITEMS.find(n => n.id === activeNav)?.label || 'Dashboard'}
             </h2>
           </div>
 
-          <div className="flex items-center gap-4 md:gap-6">
-            {/* Search */}
-            <div className="relative group hidden sm:block">
-              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant group-focus-within:text-primary transition-colors text-sm">
-                search
-              </span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search lands, NFTs, coordinates..."
-                className="bg-surface-container-lowest border-none rounded-md pl-10 pr-4 py-2 w-60 md:w-80 text-sm focus:ring-1 focus:ring-primary transition-all text-on-surface placeholder:text-on-surface-variant/50 outline-none"
-              />
-            </div>
-
-            {/* Notification bell */}
-            <button className="relative w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-primary transition-all">
-              <span className="material-symbols-outlined">notifications</span>
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error"></span>
-            </button>
-
-            {/* ETH Balance */}
-            <button className="flex items-center gap-2 bg-surface-container-high px-4 py-2 rounded-full text-on-surface-variant hover:text-primary transition-all border border-outline-variant/10">
-              <span className="material-symbols-outlined text-sm">account_balance_wallet</span>
-              <span className="text-sm font-label font-medium tracking-tight">2.45 ETH</span>
-            </button>
+          <div className="flex items-center gap-3 md:gap-4">
+            {/* Wallet button in top bar */}
+            {walletAddress ? (
+              <div className="hidden sm:flex items-center gap-2 bg-surface-container-high px-4 py-2 rounded-full border border-outline-variant/10">
+                <span className="w-2 h-2 rounded-full bg-green-400"></span>
+                <span className="font-mono text-sm font-medium text-on-surface-variant">{ethBalance ? `${ethBalance} ETH` : '...'}</span>
+                <span className="text-outline-variant/40">|</span>
+                <span className="font-mono text-xs text-on-surface-variant">{fmt(walletAddress)}</span>
+              </div>
+            ) : (
+              <button onClick={connectWallet} disabled={walletConnecting}
+                className="hidden sm:flex items-center gap-2 primary-gradient text-on-primary-container px-4 py-2 rounded-full text-sm font-bold btn-shimmer disabled:opacity-60">
+                <span className="material-symbols-outlined text-sm">account_balance_wallet</span>
+                Connect Wallet
+              </button>
+            )}
           </div>
         </header>
 
-        {/* ─── Content Body ─── */}
+        {/* Content */}
         <div className="p-6 md:p-10 max-w-7xl mx-auto">
-
-          {/* ── Stats Cards ── */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 mb-12">
-            {/* Card 1 — Total Lands */}
-            <GlassCard className="p-8 relative overflow-hidden group hover-lift">
-              <div className="absolute -right-4 -top-4 w-24 h-24 bg-primary/10 rounded-full blur-3xl transition-all group-hover:bg-primary/20" />
-              <p className="text-on-surface-variant font-label text-xs uppercase tracking-[0.2em] mb-2">Total Lands Registered</p>
-              <div className="flex items-end gap-3">
-                <span className="text-5xl font-display font-bold text-on-surface">{stats.totalLands}</span>
-                {userProfile.id ? (
-                  <span className="text-primary-dim font-label text-sm mb-2">Active Assets</span>
-                ) : (
-                  <span className="text-primary-dim font-label text-sm mb-2">+2 this month</span>
-                )}
-              </div>
-              <div className="mt-6 h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
-                <div className="h-full w-3/4 primary-gradient rounded-full" />
-              </div>
-            </GlassCard>
-
-            {/* Card 2 — NFTs Owned */}
-            <GlassCard className="p-8 relative overflow-hidden group hover-lift">
-              <div className="absolute -right-4 -top-4 w-24 h-24 bg-secondary/10 rounded-full blur-3xl transition-all group-hover:bg-secondary/20" />
-              <p className="text-on-surface-variant font-label text-xs uppercase tracking-[0.2em] mb-2">NFTs Owned</p>
-              <div className="flex items-end gap-3">
-                <span className="text-5xl font-display font-bold text-on-surface">{stats.nftsOwned}</span>
-                {userProfile.id ? (
-                  <span className="text-secondary font-label text-sm mb-2">Immutable Deeds</span>
-                ) : (
-                  <span className="text-secondary font-label text-sm mb-2">Portfolio Value: 12.4 ETH</span>
-                )}
-              </div>
-              <div className="mt-6 h-1 w-full bg-surface-container-highest rounded-full overflow-hidden">
-                <div className="h-full w-1/2 bg-secondary rounded-full" />
-              </div>
-            </GlassCard>
-
-            {/* Card 3 — Pending Verifications */}
-            <GlassCard className="p-8 relative overflow-hidden group hover-lift">
-              <div className="absolute -right-4 -top-4 w-24 h-24 bg-tertiary/10 rounded-full blur-3xl transition-all group-hover:bg-tertiary/20" />
-              <p className="text-on-surface-variant font-label text-xs uppercase tracking-[0.2em] mb-2">Pending Verifications</p>
-              <div className="flex items-end gap-3">
-                <span className="text-5xl font-display font-bold text-on-surface">{stats.pendingVerifications}</span>
-                <div className="flex items-center gap-1 mb-2">
-                  <div className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
-                  <span className="text-tertiary font-label text-sm">Syncing Ledger</span>
-                </div>
-              </div>
-              <div className="mt-6 flex gap-2">
-                <div className="h-1 flex-grow bg-tertiary rounded-full" />
-                <div className="h-1 flex-grow bg-surface-container-highest rounded-full" />
-              </div>
-            </GlassCard>
-          </div>
-
-          {/* ── Section Header ── */}
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-10">
-            <div className="space-y-1">
-              <h3 className="text-3xl font-display font-bold">
-                {myProperties.length > 0 ? 'Your Portfolio Assets' : 'Recent Land Assets'}
-              </h3>
-              <p className="text-on-surface-variant font-body">Manage and monitor your decentralized real estate portfolio.</p>
-            </div>
-            {userProfile.role === 'seller' && (
-              <Link
-                to="/kyc"
-                className="primary-gradient text-on-primary-container px-8 py-4 rounded-md font-display font-bold flex items-center gap-3 transition-all active:scale-95 shadow-[0_10px_30px_rgba(0,238,252,0.2)] hover:shadow-[0_10px_40px_rgba(0,238,252,0.35)] whitespace-nowrap btn-shimmer"
-              >
-                <span className="material-symbols-outlined">add</span>
-                Upload New Land
-              </Link>
-            )}
-          </div>
-
-          {/* ── Asymmetric Land Grid ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {myProperties.length > 0 ? (
-              <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-8">
-                {myProperties.map((prop) => (
-                  <div key={prop.id} className="group">
-                    <GlassCard className="overflow-hidden flex flex-col h-[420px] relative border border-outline-variant/15 shadow-xl hover:-translate-y-1.5 transition-all duration-300">
-                      <div className="h-48 relative overflow-hidden bg-surface-container">
-                        <img
-                          src="https://lh3.googleusercontent.com/aida-public/AB6AXuCTHk7S3F-bKLRTsMlCOiK5FUTfl8k2N26eG-MDNkrV0joDJ118dj4NHEf6fXxpKOvX70afNwVuQviouu5zdxZjOFXWQkiFu7ngIPRUkMivdlGQycPsg5CS-3gniKxDjTPFn1S51kPrMWrGIoCnaygPJZa5swDiAdvURqesOlGYrK4ISJShcgwurx1xSd0XnBT-W5YoGeDmJlr_u8wS2Xma3NODFsTUEw_mAHxUKN7CqG_5tTU1Nrly40U4FOhwPmleiscK9U2cCyut"
-                          alt={prop.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                        <div className={`absolute top-4 right-4 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-label font-bold uppercase tracking-wider border border-white/10
-                          ${prop.status === 'approved' ? 'bg-secondary-container/90 text-on-secondary-container' : 'bg-tertiary-container/90 text-on-tertiary-container'}`}>
-                          {prop.status}
-                        </div>
-                      </div>
-                      <div className="p-6 flex flex-col flex-grow">
-                        <div className="flex justify-between items-start mb-2">
-                          <h5 className="text-2xl font-display font-bold">{prop.name}</h5>
-                          <span className="bg-primary/10 text-primary text-[10px] font-label font-bold px-2 py-0.5 rounded">
-                            {prop.area_unit}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-on-surface-variant mb-4 font-label uppercase tracking-widest">
-                          CODE: {prop.property_code} | SURVEY: {prop.survey_number}
-                        </p>
-                        <p className="text-sm text-on-surface-variant font-body mb-4 line-clamp-2">
-                          {prop.description || prop.physical_address}
-                        </p>
-                        <div className="flex justify-between items-center mt-auto pt-4 border-t border-outline-variant/10">
-                          <span className="text-primary-dim font-mono text-[10px]">{prop.latitude}° N, {prop.longitude}° W</span>
-                          <Link to={`/property/${prop.id}`} className="text-primary hover:underline font-label text-xs uppercase font-bold flex items-center gap-1">
-                            Manage Asset
-                            <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                          </Link>
-                        </div>
-                      </div>
-                    </GlassCard>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <>
-                {/* Featured Card (Large) - Fallback Mock */}
-                <div className="lg:col-span-8 group">
-                  <GlassCard className="relative overflow-hidden h-[400px]">
-                    <img
-                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuCTHk7S3F-bKLRTsMlCOiK5FUTfl8k2N26eG-MDNkrV0joDJ118dj4NHEf6fXxpKOvX70afNwVuQviouu5zdxZjOFXWQkiFu7ngIPRUkMivdlGQycPsg5CS-3gniKxDjTPFn1S51kPrMWrGIoCnaygPJZa5swDiAdvURqesOlGYrK4ISJShcgwurx1xSd0XnBT-W5YoGeDmJlr_u8wS2Xma3NODFsTUEw_mAHxUKN7CqG_5tTU1Nrly40U4FOhwPmleiscK9U2cCyut"
-                      alt="Metropolis Sector 7G"
-                      className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-700"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/10 to-transparent" />
-                    <div className="absolute bottom-0 left-0 p-8 w-full flex justify-between items-end">
-                      <div>
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="bg-secondary-container/80 backdrop-blur-md text-on-secondary-container px-3 py-1 rounded-full text-[10px] font-label font-bold uppercase tracking-wider">
-                            Verified NFT
-                          </span>
-                          <span className="bg-primary/20 backdrop-blur-md text-primary px-3 py-1 rounded-full text-[10px] font-label font-bold uppercase tracking-wider">
-                            Sector 7G
-                          </span>
-                        </div>
-                        <h4 className="text-4xl font-display font-bold mb-2">Metropolis Sector 7G</h4>
-                        <p className="text-on-surface-variant font-body flex items-center gap-2">
-                          <span className="material-symbols-outlined text-sm">location_on</span>
-                          Coordinates: 42.3601° N, 71.0589° W
-                        </p>
-                      </div>
-                      <div className="flex gap-4">
-                        <button className="w-12 h-12 rounded-full border border-outline-variant/30 flex items-center justify-center backdrop-blur-md hover:bg-white/10 transition-colors">
-                          <span className="material-symbols-outlined">visibility</span>
-                        </button>
-                        <button className="w-12 h-12 rounded-full border border-outline-variant/30 flex items-center justify-center backdrop-blur-md hover:bg-white/10 transition-colors text-primary">
-                          <span className="material-symbols-outlined">share</span>
-                        </button>
-                      </div>
-                    </div>
-                  </GlassCard>
-                </div>
-
-                {/* Right stacked cards - Fallback Mock */}
-                <div className="lg:col-span-4 flex flex-col gap-6">
-                  {/* Azure Heights Card */}
-                  <GlassCard className="overflow-hidden group flex flex-col flex-1">
-                    <div className="h-40 relative overflow-hidden">
-                      <img
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuCbPIpKmurIl87B6L9xfw4UZa_t1qgVbg09uLe8zs5Rlp9WWUc5kFK5nA-ruQNtJHN3fKhK-QKOca6gY56wvPWwwIXJn-JxPSO9DqNgtrkjDUv4QPjx_6fgK2YsR3a3b_XSVqfmfnhLDVpj5gHZ7nMdqJrVz_2ZjhXmlJ3Yi_UkKd6_exPaeSFGybCYeu2voJ_EkuPtGeqL14FAoYXEJwRzhKlnzNEMngA0j3DQ93jDaKT7YzD5kM-8gt53biGaeXv4QrYKZi0xfh1a"
-                        alt="Azure Heights Parcel B"
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                      />
-                      <div className="absolute top-4 right-4 bg-tertiary-container/90 text-on-tertiary-container px-2 py-1 rounded text-[8px] font-label font-black uppercase">
-                        Minting Now
-                      </div>
-                    </div>
-                    <div className="p-6">
-                      <h5 className="text-xl font-display font-bold mb-1">Azure Heights Parcel B</h5>
-                      <p className="text-xs text-on-surface-variant mb-4 font-label tracking-tighter">HASH: 0x92f...e76c</p>
-                      <div className="flex justify-between items-center mt-auto">
-                        <span className="text-primary font-bold">4.2 ETH</span>
-                        <Link to="/payment" className="text-on-surface-variant hover:text-on-surface transition-colors font-label text-xs uppercase font-bold flex items-center gap-2">
-                          View Details
-                          <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </GlassCard>
-                </div>
-              </>
-            )}
-          </div>
-
-        </div>{/* /content */}
+          {activeNav === 'dashboard' && renderDashboard()}
+          {activeNav === 'my-lands' && renderMyLands()}
+          {activeNav === 'upload-land' && renderUploadLand()}
+          {activeNav === 'nft-holdings' && renderNFTHoldings()}
+          {activeNav === 'tx-history' && renderTransactions()}
+        </div>
       </main>
     </div>
   );

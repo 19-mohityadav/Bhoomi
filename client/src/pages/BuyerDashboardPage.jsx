@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { buyLandNFT, getWalletBalance } from '../utils/blockchain';
 
 const TABS = ['Marketplace', 'My Wallet', 'Transaction History'];
 const TAB_ICONS = {
@@ -93,7 +94,15 @@ const BuyerDashboardPage = () => {
     ? (parseInt(profile.wallet_address.slice(-4), 16) / 1500).toFixed(3)
     : '0.000';
 
-  // ─── Buy Handler ──────────────────────────────────────────────────────────────
+  // ─── Load Real ETH Balance ────────────────────────────────────────────────────
+  const [ethBalance, setEthBalance] = useState(null);
+  useEffect(() => {
+    if (profile?.wallet_address) {
+      getWalletBalance(profile.wallet_address).then(setEthBalance);
+    }
+  }, [profile]);
+
+  // ─── Buy Handler (Real Blockchain) ───────────────────────────────────────────
   const handleBuy = async () => {
     if (!profile?.wallet_address) {
       alert('Please connect your wallet first.');
@@ -102,11 +111,13 @@ const BuyerDashboardPage = () => {
     if (!selectedProperty) return;
     setBuying(true);
     try {
-      const fakeTxHash = '0x' + Array.from({ length: 64 }, () =>
-        Math.floor(Math.random() * 16).toString(16)
-      ).join('');
+      // Call real smart contract buyLand()
+      const { txHash } = await buyLandNFT({
+        tokenId: selectedProperty.token_id,
+        priceEth: selectedProperty.price || '0',
+      });
 
-      // Log transaction
+      // Log transaction to Supabase
       await supabase.from('land_transactions').insert({
         land_parcel_id: selectedProperty.id,
         seller_address: selectedProperty.owner_address,
@@ -115,12 +126,15 @@ const BuyerDashboardPage = () => {
         amount_eth: parseFloat(selectedProperty.price) || 0,
       });
 
-      alert(`🎉 Purchase Successful!\n\nNFT #${selectedProperty.token_id} is now yours.\n\nTx: ${fakeTxHash.substring(0, 20)}...`);
+      // Refresh balance
+      getWalletBalance(profile.wallet_address).then(setEthBalance);
+
+      alert(`🎉 Purchase Confirmed on Sepolia Blockchain!\n\nNFT #${selectedProperty.token_id} is now yours.\n\nTx: ${txHash.substring(0, 20)}...\n\nhttps://sepolia.etherscan.io/tx/${txHash}`);
       setSelectedProperty(null);
       await loadListings();
       await loadTransactions(profile.wallet_address);
     } catch (err) {
-      alert('Purchase failed: ' + err.message);
+      alert('❌ Purchase failed: ' + err.message);
     } finally {
       setBuying(false);
     }
@@ -336,7 +350,9 @@ const BuyerDashboardPage = () => {
           {profile?.wallet_address ? (
             <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-full">
               <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              <span className="font-mono text-xs font-semibold text-slate-700">{simulatedEth} ETH</span>
+              <span className="font-mono text-xs font-semibold text-slate-700">
+                {ethBalance !== null ? `${ethBalance} ETH` : `${simulatedEth} ETH`}
+              </span>
               <span className="text-slate-300">|</span>
               <span className="font-mono text-xs text-slate-500">{formatWallet(profile.wallet_address)}</span>
             </div>
