@@ -46,22 +46,20 @@ const AuthorityDashboardPage = () => {
 
   useEffect(() => {
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('full_name, role')
-          .eq('id', user.id)
-          .single();
-        if (data?.full_name) setAuthorityName(data.full_name);
+      const mockUserStr = localStorage.getItem('mockUser');
+      if (!mockUserStr) {
+        navigate('/login');
+        return;
       }
+      const data = JSON.parse(mockUserStr);
+      if (data?.full_name) setAuthorityName(data.full_name);
       loadLands();
     };
     init();
-  }, [loadLands]);
+  }, [loadLands, navigate]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem('mockUser');
     navigate('/login');
   };
 

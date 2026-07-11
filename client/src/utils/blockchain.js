@@ -277,6 +277,36 @@ export const buyLandNFT = async ({ tokenId, priceEth }) => {
   };
 };
 
+// ─── List Land for Sale ───────────────────────────────────────────────────────
+// Called by Seller to put their NFT on the marketplace.
+export const listLandNFT = async ({ tokenId, priceEth }) => {
+  const { walletClient, publicClient, address } = await getMetaMaskSigner();
+
+  const { parseEther } = await import('viem');
+  const priceWei = parseEther(String(priceEth));
+
+  console.log(`[Blockchain] Listing NFT #${tokenId} for ${priceEth} ETH...`);
+
+  const { request } = await publicClient.simulateContract({
+    address: BHOOMI_CONTRACT_ADDRESS,
+    abi: BHOOMI_ABI,
+    functionName: 'listLand',
+    args: [BigInt(tokenId), priceWei],
+    account: address,
+  });
+
+  const txHash = await walletClient.writeContract(request);
+  console.log(`[Blockchain] List Tx sent: ${txHash}`);
+
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  console.log(`[Blockchain] List confirmed in block ${receipt.blockNumber}`);
+
+  return {
+    txHash,
+    blockNumber: Number(receipt.blockNumber),
+  };
+};
+
 // ─── Get ETH Balance ──────────────────────────────────────────────────────────
 export const getWalletBalance = async (address) => {
   try {

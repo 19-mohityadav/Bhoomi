@@ -16,19 +16,29 @@ const ConnectWalletPage = () => {
   const handleWalletConnect = async (walletName) => {
     setIsConnecting(walletName);
     
-    // Simulate connection delay
-    await new Promise(resolve => setTimeout(resolve, 1400));
+    // If MetaMask is selected and available, use real wallet, else mock
+    let address = '0x' + Array.from({length: 40}, () => Math.floor(Math.random()*16).toString(16)).join('');
     
-    // Generate a mock wallet address for this demo
-    const mockAddress = '0x' + Array.from({length: 40}, () => Math.floor(Math.random()*16).toString(16)).join('');
+    if (walletName === 'MetaMask' && window.ethereum) {
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        if (accounts.length > 0) address = accounts[0];
+      } catch (err) {
+        console.error("MetaMask connection failed:", err);
+        setIsConnecting(null);
+        return;
+      }
+    } else {
+      // Simulate connection delay for others
+      await new Promise(resolve => setTimeout(resolve, 1400));
+    }
     
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase
-          .from('profiles')
-          .update({ wallet_address: mockAddress })
-          .eq('id', user.id);
+      const mockUserStr = localStorage.getItem('mockUser');
+      if (mockUserStr) {
+        const mockUser = JSON.parse(mockUserStr);
+        mockUser.wallet_address = address;
+        localStorage.setItem('mockUser', JSON.stringify(mockUser));
       }
     } catch (err) {
       console.error("Error saving wallet address:", err);
