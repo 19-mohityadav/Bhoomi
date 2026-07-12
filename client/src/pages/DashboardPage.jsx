@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { mintLandNFT, getWalletBalance, listLandNFT } from '../utils/blockchain';
+import MapDraw from '../components/MapDraw';
+import { formatCoordinates } from '../utils/helpers';
 
 // ─── Pinata Upload ────────────────────────────────────────────────────────────
 const pinataUpload = async (file, name) => {
@@ -101,10 +103,20 @@ const DashboardPage = () => {
 
   // ── Upload Form ──
   const [form, setForm] = useState({ landName: '', description: '', areaSqft: '', coordinates: '', price: '' });
+  const [pointInputs, setPointInputs] = useState(['', '', '', '']);
   const [files, setFiles] = useState({ image: null, deed: null, agreement: null, registry: null });
   const [uploadStep, setUploadStep] = useState(''); // status message
   const [uploading, setUploading] = useState(false);
   const [listingToken, setListingToken] = useState(null); // tracking token being listed
+
+  const points = pointInputs.map(str => {
+    if (!str) return null;
+    const parts = str.split(',').map(p => parseFloat(p.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      return { lat: parts[0], lng: parts[1] };
+    }
+    return null;
+  });
 
   // ─── Load Profile ─────────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -222,7 +234,6 @@ const DashboardPage = () => {
         attributes: [
           { trait_type: 'Status', value: 'Pending Verification' },
           { trait_type: 'Area', value: `${form.areaSqft} sqft` },
-          { trait_type: 'Coordinates', value: form.coordinates },
         ],
       };
       const metadataUrl = await pinataUploadJSON(metadata, `metadata-${Date.now()}`);
@@ -231,7 +242,7 @@ const DashboardPage = () => {
       const tokenId = Math.floor(Math.random() * 900000) + 100000;
       const { data: inserted, error } = await supabase.from('land_parcels').insert({
         owner_address: walletAddress,
-        coordinates: form.coordinates || '0° N, 0° E',
+        coordinates: form.coordinates, // Now storing stringified JSON array
         ipfs_metadata_url: metadataUrl,
         price: parseFloat(form.price) || 0,
         is_for_sale: false,
@@ -257,6 +268,7 @@ const DashboardPage = () => {
 
       setUploadStep('✅ Submitted! Awaiting authority review.');
       setForm({ landName: '', description: '', areaSqft: '', coordinates: '', price: '' });
+      setPointInputs(['', '', '', '']);
       setFiles({ image: null, deed: null, agreement: null, registry: null });
 
       await loadAll();
@@ -383,7 +395,7 @@ const DashboardPage = () => {
       <div className="p-5">
         <h5 className="font-display font-bold text-lg text-on-surface truncate mb-0.5">{land.land_name || `Land #${land.token_id}`}</h5>
         <p className="text-xs text-on-surface-variant flex items-center gap-1 mb-2">
-          <span className="material-symbols-outlined text-xs">location_on</span>{land.coordinates}
+          <span className="material-symbols-outlined text-xs">location_on</span>{formatCoordinates(land.coordinates)}
         </p>
         {land.area_sqft > 0 && (
           <p className="text-xs text-on-surface-variant flex items-center gap-1 mb-3">
@@ -493,12 +505,83 @@ const DashboardPage = () => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">GPS Coordinates *</label>
-              <input required type="text" value={form.coordinates}
-                onChange={e => setForm(f => ({ ...f, coordinates: e.target.value }))}
-                placeholder="e.g. 28.6139° N, 77.2090° E"
-                className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-on-surface-variant/40" />
+            <div className="md:col-span-2">
+              <label className="block text-[10px] font-label font-bold text-on-surface-variant uppercase tracking-widest mb-1.5">Plotted Coordinates (Click Map to Populate) *</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                {pointInputs.map((str, idx) => (
+                  <div key={idx} className="relative">
+                    <label className="block text-[9px] font-label font-semibold text-primary uppercase tracking-wider mb-1">Point {idx + 1}</label>
+                    <input 
+                      type="text" 
+                      value={str}
+                      onChange={(e) => {
+                        const nextInputs = [...pointInputs];
+                        nextInputs[idx] = e.target.value;
+                        setPointInputs(nextInputs);
+                        
+                        // Dynamically update coordinates JSON
+                        const parsedPoints = nextInputs.map(s => {
+                          if (!s) return null;
+                          const parts = s.split(',').map(p => parseFloat(p.trim()));
+                          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return { lat: parts[0], lng: parts[1] };
+                          return null;
+                        }).filter(p => p !== null);
+                        
+                        setForm(f => ({ ...f, coordinates: parsedPoints.length >= 3 ? JSON.stringify(parsedPoints) : '' }));
+                      }}
+                      placeholder="e.g. 28.6139, 77.2090"
+                      className="w-full bg-surface-container-lowest border border-outline-variant/20 rounded px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary text-on-surface placeholder:text-on-surface-variant/30 font-mono"
+                    />
+                    {str && (
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          const nextInputs = [...pointInputs];
+                          nextInputs[idx] = '';
+                          setPointInputs(nextInputs);
+                          
+                          const parsedPoints = nextInputs.map(s => {
+                            if (!s) return null;
+                            const parts = s.split(',').map(p => parseFloat(p.trim()));
+                            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return { lat: parts[0], lng: parts[1] };
+                            return null;
+                          }).filter(p => p !== null);
+                          
+                          setForm(f => ({ ...f, coordinates: parsedPoints.length >= 3 ? JSON.stringify(parsedPoints) : '' }));
+                        }}
+                        className="absolute right-2 top-6 text-on-surface-variant/60 hover:text-red-400"
+                      >
+                        <span className="material-symbols-outlined text-sm">close</span>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="relative">
+                <MapDraw 
+                  isInteractive={true} 
+                  points={points}
+                  onMapClick={(latlng) => {
+                    const nextInputs = [...pointInputs];
+                    const emptyIndex = nextInputs.findIndex(s => !s.trim());
+                    if (emptyIndex !== -1) {
+                      nextInputs[emptyIndex] = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
+                      setPointInputs(nextInputs);
+                      
+                      const parsedPoints = nextInputs.map(s => {
+                        if (!s) return null;
+                        const parts = s.split(',').map(p => parseFloat(p.trim()));
+                        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return { lat: parts[0], lng: parts[1] };
+                        return null;
+                      }).filter(p => p !== null);
+                      
+                      setForm(f => ({ ...f, coordinates: parsedPoints.length >= 3 ? JSON.stringify(parsedPoints) : '' }));
+                    }
+                  }}
+                />
+              </div>
+              <p className="text-[10px] text-on-surface-variant/70 mt-1.5">Click up to 4 different spots on the map to define the corners. They will automatically connect.</p>
             </div>
 
             <div>
@@ -608,7 +691,7 @@ const DashboardPage = () => {
               <div className="p-5">
                 <h5 className="font-display font-bold text-lg text-on-surface truncate mb-1">{nft.land_name || `Land NFT #${nft.token_id}`}</h5>
                 <p className="text-xs text-on-surface-variant flex items-center gap-1 mb-3">
-                  <span className="material-symbols-outlined text-xs">location_on</span>{nft.coordinates}
+                  <span className="material-symbols-outlined text-xs">location_on</span>{formatCoordinates(nft.coordinates)}
                 </p>
                 <div className="bg-surface-container-lowest rounded-lg p-3 border border-outline-variant/10 mb-3">
                   <p className="text-[10px] font-label text-on-surface-variant uppercase tracking-widest mb-1">Transaction Hash</p>
