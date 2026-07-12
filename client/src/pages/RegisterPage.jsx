@@ -266,15 +266,26 @@ const RegisterPage = () => {
             role,
             phone,
             wallet_address: walletAddress,
-            // ipfs_aadhaar: aadhaarHash,  // uncomment when IPFS ready
-            // ipfs_pan: panHash,
-            // ipfs_selfie: selfieHash,
+            ipfs_aadhaar: aadhaarHash,
+            ipfs_pan: panHash,
+            ipfs_selfie: selfieHash,
           },
         },
       });
 
       if (signUpError) throw signUpError;
-      navigate('/dashboard');
+      
+      // Determine redirect path based on role
+      let dashboardPath = '';
+      if (role === 'authority') {
+        dashboardPath = '/authority-dashboard';
+      } else if (role === 'seller' || role === 'owner') {
+        dashboardPath = '/dashboard';
+      } else {
+        dashboardPath = '/buyer-dashboard';
+      }
+      
+      navigate(dashboardPath);
     } catch (err) {
       setError(err.message || 'Registration failed.');
     } finally {

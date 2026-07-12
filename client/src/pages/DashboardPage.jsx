@@ -89,6 +89,7 @@ const DashboardPage = () => {
 
   // ── Auth & Profile ──
   const [userProfile, setUserProfile] = useState(null);
+  const [authUserId, setAuthUserId] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // ── Wallet ──
@@ -122,14 +123,31 @@ const DashboardPage = () => {
   const loadAll = useCallback(async () => {
     setLoading(true);
     
-    // Read from localStorage instead of Supabase Auth
-    const mockUserStr = localStorage.getItem('mockUser');
-    if (!mockUserStr) { navigate('/login'); return; }
+    // Get current auth user
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) {
+      navigate('/login');
+      return;
+    }
     
-    const mockUser = JSON.parse(mockUserStr);
-    setUserProfile(mockUser);
+    setAuthUserId(authUser.id);
 
-    const addr = mockUser.wallet_address;
+    // Fetch profile details
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authUser.id)
+      .single();
+
+    if (error || !profile) {
+      console.error("Error loading profile:", error);
+      navigate('/login');
+      return;
+    }
+
+    setUserProfile(profile);
+
+    const addr = profile.wallet_address;
     if (addr) {
       setWalletAddress(addr);
       getWalletBalance(addr).then(setEthBalance);
@@ -163,13 +181,19 @@ const DashboardPage = () => {
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const addr = accounts[0];
 
-      // Save to mock profile
-      const mockUserStr = localStorage.getItem('mockUser');
-      if (mockUserStr) {
-        const mockUser = JSON.parse(mockUserStr);
-        mockUser.wallet_address = addr;
-        localStorage.setItem('mockUser', JSON.stringify(mockUser));
-        setUserProfile(mockUser);
+      // Save to Supabase profile
+      if (authUserId) {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ wallet_address: addr })
+          .eq('id', authUserId);
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        // Update local state representation of profile
+        setUserProfile(prev => prev ? { ...prev, wallet_address: addr } : null);
       }
 
       setWalletAddress(addr);
@@ -192,7 +216,7 @@ const DashboardPage = () => {
 
   // ─── Logout ───────────────────────────────────────────────────────────────────
   const handleLogout = async () => {
-    localStorage.removeItem('mockUser');
+    await supabase.auth.signOut();
     navigate('/login');
   };
 
