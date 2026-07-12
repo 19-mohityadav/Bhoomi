@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
@@ -16,9 +15,9 @@ const Navbar = () => {
 
   return (
     <nav
-      className={`fixed top-0 w-full z-50 transition-all duration-500 ${
+      className={`sticky top-0 w-full z-50 transition-all duration-500 ${
         scrolled
-          ? 'bg-[#0c0e16]/80 backdrop-blur-2xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] py-3'
+          ? 'bg-[#f4efe6]/70 backdrop-blur-xl border border-[#e6dcbc]/40 shadow-[0_20px_60px_rgba(139,115,85,0.15)] py-3'
           : 'bg-transparent backdrop-blur-md py-5'
       }`}
     >
@@ -31,7 +30,7 @@ const Navbar = () => {
           <span className="inline-block w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-container flex items-center justify-center transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110 overflow-hidden">
             <img src="/favicon.png" alt="Bhoomi Logo" className="w-full h-full object-contain p-0.5" />
           </span>
-          <span className="transition-colors duration-300 group-hover:text-white">Bhoomi</span>
+          <span>Bhoomi</span>
         </Link>
 
         {/* Desktop Navigation */}
@@ -43,13 +42,13 @@ const Navbar = () => {
             Explore
           </a>
           <a
-            className="nav-link-animated font-['Space_Grotesk'] tracking-wide uppercase text-sm font-bold text-slate-400 hover:text-white transition-colors duration-300"
+            className="nav-link-animated font-['Space_Grotesk'] tracking-wide uppercase text-sm font-bold text-slate-400 hover:text-primary transition-colors duration-300"
             href="#how-it-works"
           >
             How It Works
           </a>
           <a
-            className="nav-link-animated font-['Space_Grotesk'] tracking-wide uppercase text-sm font-bold text-slate-400 hover:text-white transition-colors duration-300"
+            className="nav-link-animated font-['Space_Grotesk'] tracking-wide uppercase text-sm font-bold text-slate-400 hover:text-primary transition-colors duration-300"
             href="#features"
           >
             Features
@@ -65,12 +64,11 @@ const Navbar = () => {
             View Demo
           </a>
 
-          {/* Wallet Connect Button */}
-          <ConnectButton
-            showBalance={false}
-            chainStatus="icon"
-            accountStatus="avatar"
-          />
+          <Link
+              to="/login"
+              className="btn-shimmer w-full sm:w-auto px-6 py-2.5 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary-container font-headline font-bold uppercase tracking-widest text-sm hover:translate-y-[-3px] transition-all duration-300 shadow-lg shadow-primary/10 hover:shadow-xl hover:shadow-primary/20 text-center">
+              Login
+          </Link>
 
           {/* Mobile hamburger */}
           <button
