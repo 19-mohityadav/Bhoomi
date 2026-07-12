@@ -104,8 +104,8 @@
    ═══════════════════════════════════════════════════════ */
 
 .active-role {
-  background-color: #FDDA8F;
-  color: #4A360D;
+  background-color: #4A360D; /* dark background */
+  color: #FDDA8F; /* light text */
 }
 
 .otp-input:focus {

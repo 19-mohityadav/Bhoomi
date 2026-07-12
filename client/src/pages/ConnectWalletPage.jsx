@@ -262,7 +262,7 @@ const ConnectWalletPage = () => {
       <footer className="w-full py-12 bg-surface-container-lowest flex flex-col md:flex-row justify-between items-center px-12 border-t border-outline-variant/15 mt-auto relative z-20">
         <div className="mb-6 md:mb-0">
           <span className="font-headline text-lg text-on-surface font-bold tracking-tight">Bhoomi</span>
-          <p className="font-body text-xs text-on-surface-variant mt-1 opacity-80 hover:opacity-100 transition-opacity">© 2024 Bhoomi Ledger. All Rights Reserved.</p>
+          <p className="font-body text-xs text-on-surface-variant mt-1 opacity-80 hover:opacity-100 transition-opacity">© 2026 Bhoomi. All Rights Reserved.</p>
         </div>
         <div className="flex items-center gap-8">
           <a className="font-body text-xs text-on-surface-variant hover:text-primary transition-colors" href="#">Privacy Policy</a>

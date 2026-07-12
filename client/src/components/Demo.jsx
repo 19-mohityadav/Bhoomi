@@ -38,14 +38,7 @@ const Demo = () => {
                 </li>
               ))}
             </ul>
-            <button className="px-8 py-3 bg-surface-container-high rounded-full border border-outline-variant/30 text-sm font-bold uppercase tracking-widest hover:border-primary hover:text-primary transition-all duration-300 group">
-              <span className="inline-flex items-center gap-2">
-                Launch Dashboard
-                <span className="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform duration-300">
-                  arrow_forward
-                </span>
-              </span>
-            </button>
+           
           </div>
 
           {/* Right Mockup */}

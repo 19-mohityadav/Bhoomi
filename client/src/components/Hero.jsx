@@ -120,7 +120,7 @@ const Hero = () => {
               to="/register"
               className="btn-shimmer w-full sm:w-auto px-10 py-4 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary-container font-headline font-bold uppercase tracking-widest text-sm hover:translate-y-[-3px] transition-all duration-300 shadow-lg shadow-primary/10 hover:shadow-xl hover:shadow-primary/20 text-center"
             >
-              Login / Register
+              Register
             </Link>
             <a
               href="#demo"

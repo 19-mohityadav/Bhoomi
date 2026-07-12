@@ -46,7 +46,7 @@ const Footer = () => {
 
         {/* Copyright */}
         <div className="font-['Manrope'] text-xs tracking-widest uppercase text-slate-600">
-          © 2024 Bhoomi. The Digital Architect. All rights reserved.
+          © 2026 Bhoomi. The Digital Architect. All rights reserved.
         </div>
       </div>
     </footer>
