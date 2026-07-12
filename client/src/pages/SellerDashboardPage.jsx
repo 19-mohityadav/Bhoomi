@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import MapDraw from '../components/MapDraw';
+import { formatCoordinates, parsePolygon } from '../utils/helpers';
 
 // ─── Pinata Upload Helper ────────────────────────────────────────────────────
 const uploadToPinata = async (file) => {
@@ -78,9 +80,22 @@ const SellerDashboardPage = () => {
     landName: '', description: '', areaSqft: '', coordinates: '',
     price: '',
   });
+  const [pointInputs, setPointInputs] = useState(['', '', '', '']);
   const [docFile, setDocFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
+
+  const points = pointInputs.map(str => {
+    if (!str) return null;
+    const parts = str.split(',').map(p => parseFloat(p.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      return { lat: parts[0], lng: parts[1] };
+    }
+    return null;
+  });
+  
+  // ── Modal State ──
+  const [mapModalLand, setMapModalLand] = useState(null);
 
   // ─── Load Profile ────────────────────────────────────────────────────────────
   const loadProfile = useCallback(async () => {
@@ -160,7 +175,7 @@ const SellerDashboardPage = () => {
       const tokenId = Math.floor(Math.random() * 90000) + 10000;
       const { data: inserted, error } = await supabase.from('land_parcels').insert({
         owner_address: profile.wallet_address,
-        coordinates: form.coordinates || '0° N, 0° E',
+        coordinates: form.coordinates,
         ipfs_metadata_url: ipfsUrl,
         price: parseFloat(form.price) || 0,
         is_for_sale: false,
@@ -184,6 +199,7 @@ const SellerDashboardPage = () => {
 
       setUploadMsg('✅ Land submitted for authority review!');
       setForm({ landName: '', description: '', areaSqft: '', coordinates: '', price: '' });
+      setPointInputs(['', '', '', '']);
       setDocFile(null);
       await loadLands(profile.wallet_address);
       await loadTransactions(profile.wallet_address);
@@ -359,12 +375,83 @@ const SellerDashboardPage = () => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Coordinates (GPS) *</label>
-              <input required type="text" value={form.coordinates}
-                onChange={e => setForm(f => ({ ...f, coordinates: e.target.value }))}
-                placeholder="e.g. 28.6139° N, 77.2090° E"
-                className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50" />
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Plotted Coordinates (Click Map to Populate) *</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                {pointInputs.map((str, idx) => (
+                  <div key={idx} className="relative">
+                    <label className="block text-[9px] font-label font-semibold text-indigo-600 uppercase tracking-wider mb-1">Point {idx + 1}</label>
+                    <input 
+                      type="text" 
+                      value={str}
+                      onChange={(e) => {
+                        const nextInputs = [...pointInputs];
+                        nextInputs[idx] = e.target.value;
+                        setPointInputs(nextInputs);
+                        
+                        // Dynamically update coordinates JSON
+                        const parsedPoints = nextInputs.map(s => {
+                          if (!s) return null;
+                          const parts = s.split(',').map(p => parseFloat(p.trim()));
+                          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return { lat: parts[0], lng: parts[1] };
+                          return null;
+                        }).filter(p => p !== null);
+                        
+                        setForm(f => ({ ...f, coordinates: parsedPoints.length >= 3 ? JSON.stringify(parsedPoints) : '' }));
+                      }}
+                      placeholder="e.g. 28.6139, 77.2090"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50 font-mono"
+                    />
+                    {str && (
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          const nextInputs = [...pointInputs];
+                          nextInputs[idx] = '';
+                          setPointInputs(nextInputs);
+                          
+                          const parsedPoints = nextInputs.map(s => {
+                            if (!s) return null;
+                            const parts = s.split(',').map(p => parseFloat(p.trim()));
+                            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return { lat: parts[0], lng: parts[1] };
+                            return null;
+                          }).filter(p => p !== null);
+                          
+                          setForm(f => ({ ...f, coordinates: parsedPoints.length >= 3 ? JSON.stringify(parsedPoints) : '' }));
+                        }}
+                        className="absolute right-2 top-6 text-slate-400 hover:text-red-500"
+                      >
+                        <span className="material-symbols-outlined text-sm">close</span>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="relative">
+                <MapDraw 
+                  isInteractive={true} 
+                  points={points}
+                  onMapClick={(latlng) => {
+                    const nextInputs = [...pointInputs];
+                    const emptyIndex = nextInputs.findIndex(s => !s.trim());
+                    if (emptyIndex !== -1) {
+                      nextInputs[emptyIndex] = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
+                      setPointInputs(nextInputs);
+                      
+                      const parsedPoints = nextInputs.map(s => {
+                        if (!s) return null;
+                        const parts = s.split(',').map(p => parseFloat(p.trim()));
+                        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return { lat: parts[0], lng: parts[1] };
+                        return null;
+                      }).filter(p => p !== null);
+                      
+                      setForm(f => ({ ...f, coordinates: parsedPoints.length >= 3 ? JSON.stringify(parsedPoints) : '' }));
+                    }
+                  }}
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5">Click up to 4 different spots on the map to define the corners. They will automatically connect.</p>
             </div>
 
             <div>
@@ -464,10 +551,19 @@ const SellerDashboardPage = () => {
               </div>
               <div className="p-5">
                 <h4 className="font-bold text-slate-900 mb-1">{land.land_name || `Property #${land.token_id}`}</h4>
-                <p className="text-xs text-slate-500 flex items-center gap-1 mb-1">
-                  <span className="material-symbols-outlined text-xs">location_on</span>
-                  {land.coordinates}
-                </p>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="text-xs text-slate-500 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs">location_on</span>
+                    {formatCoordinates(land.coordinates)}
+                  </p>
+                  {parsePolygon(land.coordinates) && (
+                    <button 
+                      onClick={() => setMapModalLand(land)}
+                      className="text-indigo-600 hover:text-indigo-800 text-[10px] font-bold uppercase tracking-wider flex items-center gap-0.5 bg-indigo-50 px-2 py-1 rounded">
+                      <span className="material-symbols-outlined text-[10px]">map</span> Map
+                    </button>
+                  )}
+                </div>
                 {land.area_sqft && (
                   <p className="text-xs text-slate-500 flex items-center gap-1">
                     <span className="material-symbols-outlined text-xs">square_foot</span>
@@ -521,10 +617,19 @@ const SellerDashboardPage = () => {
               </div>
               <div className="p-5">
                 <h4 className="font-bold text-slate-900 mb-1">{nft.land_name || `Land NFT #${nft.token_id}`}</h4>
-                <p className="text-xs text-slate-500 flex items-center gap-1 mb-3">
-                  <span className="material-symbols-outlined text-xs">location_on</span>
-                  {nft.coordinates}
-                </p>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <p className="text-xs text-slate-500 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs">location_on</span>
+                    {formatCoordinates(nft.coordinates)}
+                  </p>
+                  {parsePolygon(nft.coordinates) && (
+                    <button 
+                      onClick={() => setMapModalLand(nft)}
+                      className="text-indigo-600 hover:text-indigo-800 text-[10px] font-bold uppercase tracking-wider flex items-center gap-0.5 bg-indigo-50 px-2 py-1 rounded">
+                      <span className="material-symbols-outlined text-[10px]">map</span> Map
+                    </button>
+                  )}
+                </div>
                 <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                   <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Tx Hash</p>
                   <p className="font-mono text-xs text-slate-600 break-all">{nft.nft_tx_hash?.substring(0, 30)}...</p>
@@ -599,7 +704,28 @@ const SellerDashboardPage = () => {
 
   // ─── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
+    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900 relative">
+      {/* Map Modal */}
+      {mapModalLand && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800">Land Outline - {mapModalLand.land_name || `Property #${mapModalLand.token_id}`}</h3>
+              <button onClick={() => setMapModalLand(null)} className="text-slate-400 hover:text-slate-600">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="p-4">
+              <MapDraw 
+                isInteractive={false} 
+                existingPolygonCoords={parsePolygon(mapModalLand.coordinates)} 
+                height="400px" 
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex sticky top-0 h-screen">
         <div className="p-6 border-b border-slate-100">

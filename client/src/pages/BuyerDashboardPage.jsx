@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { buyLandNFT, getWalletBalance } from '../utils/blockchain';
+import MapDraw from '../components/MapDraw';
+import { formatCoordinates, parsePolygon } from '../utils/helpers';
 
 const TABS = ['Marketplace', 'My Wallet', 'Transaction History'];
 const TAB_ICONS = {
@@ -199,7 +201,7 @@ const BuyerDashboardPage = () => {
                 </div>
                 <p className="text-xs text-slate-500 flex items-center gap-1 mb-1">
                   <span className="material-symbols-outlined text-xs">location_on</span>
-                  {prop.coordinates}
+                  {formatCoordinates(prop.coordinates)}
                 </p>
                 {prop.area_sqft && (
                   <p className="text-xs text-slate-500 flex items-center gap-1 mb-3">
@@ -401,10 +403,25 @@ const BuyerDashboardPage = () => {
                 </div>
                 <div>
                   <h4 className="font-bold text-slate-900">{selectedProperty.land_name || `NFT #${selectedProperty.token_id}`}</h4>
-                  <p className="text-xs text-slate-500 mt-0.5">{selectedProperty.coordinates}</p>
+                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs">location_on</span>
+                    {formatCoordinates(selectedProperty.coordinates)}
+                  </p>
                   <p className="font-mono font-bold text-indigo-600 mt-1 text-lg">{selectedProperty.price || 0} ETH</p>
                 </div>
               </div>
+
+              {/* Map View */}
+              {parsePolygon(selectedProperty.coordinates) && (
+                <div className="mb-5">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Land Outline Map</p>
+                  <MapDraw 
+                    isInteractive={false} 
+                    existingPolygonCoords={parsePolygon(selectedProperty.coordinates)} 
+                    height="200px" 
+                  />
+                </div>
+              )}
 
               <div className="bg-slate-50 rounded-xl p-4 mb-5 border border-slate-200 space-y-2 text-sm">
                 <div className="flex justify-between">

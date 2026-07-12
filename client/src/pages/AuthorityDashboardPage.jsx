@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { mintLandNFT } from '../utils/blockchain';
+import MapDraw from '../components/MapDraw';
+import { formatCoordinates, parsePolygon } from '../utils/helpers';
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 const StatusBadge = ({ status }) => {
@@ -33,6 +35,7 @@ const AuthorityDashboardPage = () => {
   const [actionLoading, setActionLoading] = useState(null); // land id being actioned
   const [mintStatus, setMintStatus] = useState('');
   const [authorityName, setAuthorityName] = useState('Inspector General');
+  const [mapModalLand, setMapModalLand] = useState(null);
 
   const loadLands = useCallback(async () => {
     setLoading(true);
@@ -170,9 +173,18 @@ const AuthorityDashboardPage = () => {
             <span className="material-symbols-outlined text-xs text-slate-400">account_balance_wallet</span>
             <span className="font-mono">{land.owner_address.substring(0, 10)}...{land.owner_address.slice(-6)}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-xs text-slate-400">location_on</span>
-            <span>{land.coordinates}</span>
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <span className="material-symbols-outlined text-xs text-slate-400">location_on</span>
+              <span className="truncate">{formatCoordinates(land.coordinates)}</span>
+            </div>
+            {parsePolygon(land.coordinates) && (
+              <button 
+                onClick={() => setMapModalLand(land)}
+                className="text-indigo-600 hover:text-indigo-800 text-[10px] font-bold uppercase tracking-wider flex items-center gap-0.5 bg-indigo-50 px-2 py-1 rounded">
+                <span className="material-symbols-outlined text-[10px]">map</span> Map
+              </button>
+            )}
           </div>
           {land.area_sqft && (
             <div className="flex items-center gap-1.5">
@@ -250,6 +262,28 @@ const AuthorityDashboardPage = () => {
           <span className="text-sm font-semibold">{mintStatus}</span>
         </div>
       )}
+
+      {/* Map Modal */}
+      {mapModalLand && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800">Land Outline - {mapModalLand.land_name || `Property #${mapModalLand.token_id}`}</h3>
+              <button onClick={() => setMapModalLand(null)} className="text-slate-400 hover:text-slate-600">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="p-4">
+              <MapDraw 
+                isInteractive={false} 
+                existingPolygonCoords={parsePolygon(mapModalLand.coordinates)} 
+                height="400px" 
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex sticky top-0 h-screen">
         <div className="p-6 border-b border-slate-100">
