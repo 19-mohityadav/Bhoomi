@@ -33,6 +33,9 @@ const BuyerDashboardPage = () => {
   const [activeTab, setActiveTab] = useState('Marketplace');
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [walletDropdownOpen, setWalletDropdownOpen] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalType, setConfirmModalType] = useState('logout'); // 'logout' | 'disconnect'
 
   // Data
   const [listings, setListings] = useState([]);
@@ -96,7 +99,37 @@ const BuyerDashboardPage = () => {
     init();
   }, [loadProfile, loadListings, loadTransactions]);
 
-  const handleLogout = async () => {
+  const handleDisconnectWallet = () => {
+    setConfirmModalType('disconnect');
+    setShowConfirmModal(true);
+  };
+
+  const executeDisconnectWallet = async () => {
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        await supabase
+          .from('profiles')
+          .update({ wallet_address: null })
+          .eq('id', authUser.id);
+      }
+      setProfile(prev => prev ? { ...prev, wallet_address: null } : null);
+      setEthBalance(null);
+      setTransactions([]);
+    } catch (err) {
+      console.error("Failed to disconnect wallet:", err);
+      alert("Failed to disconnect wallet: " + err.message);
+    } finally {
+      setWalletDropdownOpen(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setConfirmModalType('logout');
+    setShowConfirmModal(true);
+  };
+
+  const executeLogout = async () => {
     await supabase.auth.signOut();
     navigate('/login');
   };
@@ -373,13 +406,29 @@ const BuyerDashboardPage = () => {
             Buyer
           </span>
           {profile?.wallet_address ? (
-            <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-full">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              <span className="font-mono text-xs font-semibold text-slate-700">
-                {ethBalance !== null ? `${ethBalance} ETH` : `${simulatedEth} ETH`}
-              </span>
-              <span className="text-slate-300">|</span>
-              <span className="font-mono text-xs text-slate-500">{formatWallet(profile.wallet_address)}</span>
+            <div className="relative">
+              <button
+                onClick={() => setWalletDropdownOpen(!walletDropdownOpen)}
+                className="flex items-center gap-2 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-full hover:bg-slate-200 transition-colors"
+              >
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span className="font-mono text-xs font-semibold text-slate-700">
+                  {ethBalance !== null ? `${ethBalance} ETH` : `${simulatedEth} ETH`}
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="font-mono text-xs text-slate-500">{formatWallet(profile.wallet_address)}</span>
+              </button>
+              {walletDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-xl py-1 z-50 animate-fade-in">
+                  <button
+                    onClick={handleDisconnectWallet}
+                    className="w-full px-4 py-2.5 text-left text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+                  >
+                    <span className="material-symbols-outlined text-sm">logout</span>
+                    Disconnect Wallet
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <button onClick={goConnectWallet}
@@ -471,6 +520,49 @@ const BuyerDashboardPage = () => {
                 ) : (
                   <><span className="material-symbols-outlined text-sm">lock</span> Confirm Purchase</>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Custom Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-sm w-full shadow-2xl flex flex-col gap-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">{confirmModalType === 'logout' ? 'logout' : 'link_off'}</span>
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-lg text-slate-900">
+                {confirmModalType === 'logout' ? 'Sign Out' : 'Disconnect Wallet'}
+              </h3>
+              <p className="text-slate-500 text-sm mt-2">
+                {confirmModalType === 'logout' 
+                  ? 'Are you sure you want to sign out of your account?' 
+                  : 'Are you sure you want to disconnect your MetaMask wallet?'}
+              </p>
+            </div>
+            <div className="flex gap-3 mt-2">
+              <button 
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  if (confirmModalType === 'logout') {
+                    executeLogout();
+                  } else {
+                    executeDisconnectWallet();
+                  }
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors"
+              >
+                Confirm
               </button>
             </div>
           </div>

@@ -245,6 +245,32 @@ const ConnectWalletPage = () => {
           <img alt="Abstract Blockchain Visualization" className="w-full h-full object-cover scale-110" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCr8RKR5AW9AIh5dyE5u-hVEaXr7Eq_WXWaJqNKMKxfwZmWnk1rzkSmgUTTM_7uY60VMSVkBLnXKQeHILigsCUBm9SlFeueEU0NobU1H6FHqy_d6w15NWTRBKK3NJaBKRNDtPA_h1p94zUnk8vwDefQTFu9QstxnI_k1pe9D8ZkSSdH8eiAPymeqtOFb2j-AAXmRMnD1YG1EKaz4ltRKDhPHzn1nkgNI12UIC7ErB0VXUq2FDzxcvb53mIi_rKzOoJ84SiTtMINqoCy"/>
         </div>
       </main>
+
+      {/* MetaMask Connection Overlay */}
+      {isConnecting === 'MetaMask' && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-6 animate-fade-in">
+          <div className="bg-surface-container-high border border-outline-variant/20 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl flex flex-col items-center gap-6">
+            <div className="relative w-24 h-24 flex items-center justify-center">
+              <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
+              <img 
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBBdIVsUarpd3oBH5AZZuR_4UMzbKWu-M5Zr_KRm5ePRiQsNa1uhNbRt1yH6VwDJarboZpyKfMrhMX2hHCDbPf3rBiPuPensyN4HoE_p1q13VjqwO6Upl5CHLzRtaxY8PnDNibHoucurwcltrPi4GsOykYDYb0HUF7f1boH7IOWv9-1sxyytEuGDqgpeJIg_AB4S-S-vvyT1WY3Bq9cx1GddD8Vy5tWeDxgJcHF-hBfJSbYr4OKn1NsLsfVMl2hZ4uG4wExVXDspwJ4" 
+                alt="MetaMask Logo" 
+                className="w-16 h-16 object-contain animate-bounce" 
+              />
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-xl text-on-surface">Connecting MetaMask</h3>
+              <p className="text-on-surface-variant text-sm mt-2">
+                Opening MetaMask extension. Please approve the connection request in the popup window.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+              <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+              <span>Awaiting connection...</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
