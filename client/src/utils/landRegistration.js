@@ -2,6 +2,10 @@ import { supabase } from '../supabaseClient';
 
 export async function handleLandRegistration(citizenAddress, coordinates, fileToUpload) {
   try {
+    const jwt = import.meta.env.VITE_PINATA_JWT;
+    if (!jwt) {
+      throw new Error("Pinata JWT (VITE_PINATA_JWT) is missing in environment variables. Please check your deployment settings.");
+    }
     // 1. Upload the physical document to IPFS via Pinata
     const formData = new FormData();
     formData.append('file', fileToUpload);
@@ -9,7 +13,7 @@ export async function handleLandRegistration(citizenAddress, coordinates, fileTo
     const uploadRes = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${import.meta.env.VITE_PINATA_JWT}`,
+        Authorization: `Bearer ${jwt}`,
       },
       body: formData,
     });

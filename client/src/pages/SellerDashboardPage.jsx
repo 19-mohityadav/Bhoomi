@@ -8,6 +8,9 @@ import { getWalletBalance } from '../utils/blockchain';
 // ─── Pinata Upload Helper ────────────────────────────────────────────────────
 const uploadToPinata = async (file) => {
   const jwt = import.meta.env.VITE_PINATA_JWT;
+  if (!jwt) {
+    throw new Error("Pinata JWT (VITE_PINATA_JWT) is missing in environment variables. Please check your deployment settings.");
+  }
   const formData = new FormData();
   formData.append('file', file);
   formData.append('pinataMetadata', JSON.stringify({ name: file.name }));
