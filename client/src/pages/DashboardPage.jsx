@@ -96,6 +96,10 @@ const DashboardPage = () => {
   const [walletAddress, setWalletAddress] = useState(null);
   const [ethBalance, setEthBalance] = useState(null);
   const [walletConnecting, setWalletConnecting] = useState(false);
+  const [walletDropdownOpen, setWalletDropdownOpen] = useState(false);
+  const [isConnectingMetaMask, setIsConnectingMetaMask] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalType, setConfirmModalType] = useState('logout'); // 'logout' | 'disconnect'
 
   // ── Data ──
   const [myLands, setMyLands] = useState([]);
@@ -177,6 +181,7 @@ const DashboardPage = () => {
       return;
     }
     setWalletConnecting(true);
+    setIsConnectingMetaMask(true);
     try {
       const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const addr = accounts[0];
@@ -211,11 +216,48 @@ const DashboardPage = () => {
       alert('Wallet connection failed: ' + err.message);
     } finally {
       setWalletConnecting(false);
+      setIsConnectingMetaMask(false);
+    }
+  };
+
+  // ─── Disconnect MetaMask Wallet ───────────────────────────────────────────────
+  const handleDisconnectWallet = () => {
+    setConfirmModalType('disconnect');
+    setShowConfirmModal(true);
+  };
+
+  const executeDisconnectWallet = async () => {
+    setWalletConnecting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('profiles')
+          .update({ wallet_address: null })
+          .eq('id', user.id);
+      }
+      setWalletAddress(null);
+      setEthBalance(null);
+      setMyLands([]);
+      setMyNFTs([]);
+      setTransactions([]);
+      setUserProfile(prev => prev ? { ...prev, wallet_address: null } : null);
+    } catch (err) {
+      console.error('Wallet disconnection failed:', err);
+      alert('Wallet disconnection failed: ' + err.message);
+    } finally {
+      setWalletConnecting(false);
+      setWalletDropdownOpen(false);
     }
   };
 
   // ─── Logout ───────────────────────────────────────────────────────────────────
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    setConfirmModalType('logout');
+    setShowConfirmModal(true);
+  };
+
+  const executeLogout = async () => {
     await supabase.auth.signOut();
     navigate('/login');
   };
@@ -650,9 +692,9 @@ const DashboardPage = () => {
             </div>
 
             {/* Authority Notice */}
-            <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 rounded-lg p-4">
-              <span className="material-symbols-outlined text-amber-400 text-xl mt-0.5">info</span>
-              <p className="text-xs text-amber-200/80">All 4 documents are uploaded to IPFS (permanent, decentralized). The Government Authority will review your submission and approve NFT minting. You will see the NFT in your Holdings once approved.</p>
+            <div className="flex items-start gap-3 bg-amber-100 border border-amber-300 rounded-lg p-4">
+              <span className="material-symbols-outlined text-amber-700 text-xl mt-0.5">info</span>
+              <p className="text-xs text-amber-950 font-medium">All 4 documents are uploaded to IPFS (permanent, decentralized). The Government Authority will review your submission and approve NFT minting. You will see the NFT in your Holdings once approved.</p>
             </div>
 
             {/* Status Message */}
@@ -834,7 +876,7 @@ const DashboardPage = () => {
 
   // ─── RENDER ───────────────────────────────────────────────────────────────────
   return (
-    <div className="bg-surface text-on-surface font-body min-h-screen relative page-enter">
+    <div className="bg-surface text-on-surface font-body min-h-screen relative">
       <div className="fixed inset-0 grid-bg pointer-events-none z-0" />
 
       {/* ─── Sidebar ─── */}
@@ -852,9 +894,18 @@ const DashboardPage = () => {
         <div className="mb-6">
           {walletAddress ? (
             <div className="glass-card rounded-lg p-4 border border-primary/20">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-                <p className="text-[10px] font-label font-bold text-green-400 uppercase tracking-widest">Wallet Connected</p>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+                  <p className="text-[10px] font-label font-bold text-green-400 uppercase tracking-widest">Wallet Connected</p>
+                </div>
+                <button
+                  onClick={handleDisconnectWallet}
+                  title="Disconnect Wallet"
+                  className="text-on-surface-variant hover:text-error transition-colors flex items-center"
+                >
+                  <span className="material-symbols-outlined text-sm">link_off</span>
+                </button>
               </div>
               <p className="font-mono text-sm text-on-surface font-bold">{fmt(walletAddress)}</p>
               {ethBalance && (
@@ -904,7 +955,7 @@ const DashboardPage = () => {
       {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
       {/* ─── Main Content ─── */}
-      <main className="md:ml-72 min-h-screen relative z-10">
+      <main className="md:ml-72 min-h-screen relative z-10 page-enter">
         {/* Top Bar */}
         <header className="sticky top-0 w-full h-20 bg-surface/60 backdrop-blur-md flex justify-between items-center px-6 md:px-10 z-40 border-b border-outline-variant/10">
           <div className="flex items-center gap-4">
@@ -919,11 +970,29 @@ const DashboardPage = () => {
           <div className="flex items-center gap-3 md:gap-4">
             {/* Wallet button in top bar */}
             {walletAddress ? (
-              <div className="hidden sm:flex items-center gap-2 bg-surface-container-high px-4 py-2 rounded-full border border-outline-variant/10">
-                <span className="w-2 h-2 rounded-full bg-green-400"></span>
-                <span className="font-mono text-sm font-medium text-on-surface-variant">{ethBalance ? `${ethBalance} ETH` : '...'}</span>
-                <span className="text-outline-variant/40">|</span>
-                <span className="font-mono text-xs text-on-surface-variant">{fmt(walletAddress)}</span>
+              <div className="relative">
+                <button
+                  onClick={() => setWalletDropdownOpen(!walletDropdownOpen)}
+                  className="hidden sm:flex items-center gap-2 bg-surface-container-high px-4 py-2 rounded-full border border-outline-variant/10 hover:bg-surface-container-highest transition-colors"
+                >
+                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+                  <span className="font-mono text-sm font-medium text-on-surface-variant">
+                    {ethBalance ? `${ethBalance} ETH` : '...'}
+                  </span>
+                  <span className="text-outline-variant/40">|</span>
+                  <span className="font-mono text-xs text-on-surface-variant">{fmt(walletAddress)}</span>
+                </button>
+                {walletDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-surface-container-high border border-outline-variant/20 rounded-md shadow-2xl py-1 z-50 animate-fade-in">
+                    <button
+                      onClick={handleDisconnectWallet}
+                      className="w-full px-4 py-3 text-left text-xs font-headline font-bold text-error hover:bg-error-container/10 transition-colors flex items-center gap-2"
+                    >
+                      <span className="material-symbols-outlined text-sm">logout</span>
+                      Disconnect Wallet
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <button onClick={connectWallet} disabled={walletConnecting}
@@ -944,6 +1013,76 @@ const DashboardPage = () => {
           {activeNav === 'tx-history' && renderTransactions()}
         </div>
       </main>
+
+      {/* MetaMask Connection Overlay */}
+      {isConnectingMetaMask && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-6 animate-fade-in">
+          <div className="bg-surface-container-high border border-outline-variant/20 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl flex flex-col items-center gap-6">
+            <div className="relative w-24 h-24 flex items-center justify-center">
+              <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
+              <img 
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBBdIVsUarpd3oBH5AZZuR_4UMzbKWu-M5Zr_KRm5ePRiQsNa1uhNbRt1yH6VwDJarboZpyKfMrhMX2hHCDbPf3rBiPuPensyN4HoE_p1q13VjqwO6Upl5CHLzRtaxY8PnDNibHoucurwcltrPi4GsOykYDYb0HUF7f1boH7IOWv9-1sxyytEuGDqgpeJIg_AB4S-S-vvyT1WY3Bq9cx1GddD8Vy5tWeDxgJcHF-hBfJSbYr4OKn1NsLsfVMl2hZ4uG4wExVXDspwJ4" 
+                alt="MetaMask Logo" 
+                className="w-16 h-16 object-contain animate-bounce" 
+              />
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-xl text-on-surface">Connecting MetaMask</h3>
+              <p className="text-on-surface-variant text-sm mt-2">
+                Opening MetaMask extension. Please approve the connection request in the popup window.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+              <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+              <span>Awaiting connection...</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-surface-container-high border border-outline-variant/20 rounded-2xl p-6 max-w-sm w-full shadow-2xl flex flex-col gap-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-error/10 text-error flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">{confirmModalType === 'logout' ? 'logout' : 'link_off'}</span>
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-lg text-on-surface">
+                {confirmModalType === 'logout' ? 'Sign Out' : 'Disconnect Wallet'}
+              </h3>
+              <p className="text-on-surface-variant text-sm mt-2">
+                {confirmModalType === 'logout' 
+                  ? 'Are you sure you want to sign out of your account?' 
+                  : 'Are you sure you want to disconnect your MetaMask wallet?'}
+              </p>
+            </div>
+            <div className="flex gap-3 mt-2">
+              <button 
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 py-2.5 rounded-lg border border-outline-variant/20 text-xs font-semibold hover:bg-surface-container-highest transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  if (confirmModalType === 'logout') {
+                    executeLogout();
+                  } else {
+                    executeDisconnectWallet();
+                  }
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-error text-on-error text-xs font-semibold hover:bg-error-dim transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

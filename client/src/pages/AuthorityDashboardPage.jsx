@@ -38,6 +38,7 @@ const AuthorityDashboardPage = () => {
   const [mapModalLand, setMapModalLand] = useState(null);
   const [activeLandDocs, setActiveLandDocs] = useState(null);
   const [activePersonalDocs, setActivePersonalDocs] = useState(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const loadLands = useCallback(async () => {
     setLoading(true);
@@ -105,7 +106,11 @@ const AuthorityDashboardPage = () => {
     init();
   }, [loadLands, navigate]);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    setShowConfirmModal(true);
+  };
+
+  const executeLogout = async () => {
     await supabase.auth.signOut();
     navigate('/login');
   };
@@ -496,7 +501,7 @@ const AuthorityDashboardPage = () => {
       )}
 
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex sticky top-0 h-screen">
+      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex fixed left-0 top-0 h-screen z-30">
         <div className="p-6 border-b border-slate-100">
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">Bhoomi</h1>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">Authority Portal</p>
@@ -539,7 +544,7 @@ const AuthorityDashboardPage = () => {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col min-h-screen">
+      <main className="flex-1 flex flex-col min-h-screen md:ml-64">
         <header className="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-8 sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-slate-400">{TAB_ICONS[activeTab]}</span>
@@ -574,6 +579,39 @@ const AuthorityDashboardPage = () => {
           )}
         </div>
       </main>
+      {/* Custom Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-sm w-full shadow-2xl flex flex-col gap-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">logout</span>
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-lg text-slate-900">Sign Out</h3>
+              <p className="text-slate-500 text-sm mt-2">Are you sure you want to sign out of your account?</p>
+            </div>
+            <div className="flex gap-3 mt-2">
+              <button 
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 py-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  executeLogout();
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

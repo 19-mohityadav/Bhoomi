@@ -59,11 +59,11 @@
 }
 
 .primary-gradient {
-  background: linear-gradient(135deg, #FDDA8F 0%, #FFE3A8 100%);
+  background: linear-gradient(135deg, #8B5E3C 0%, #B57A48 100%);
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #FDDA8F 0%, #FFE3A8 100%);
+  background: linear-gradient(135deg, #8B5E3C 0%, #B57A48 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -458,11 +458,11 @@ button,
 a[href="#demo"],
 a[href="/register"],
 input[type="submit"] {
-  border: 1px solid rgba(198, 139, 89, 0.3) !important;
-  background: linear-gradient(135deg, #C68B59 0%, #E6CCB2 100%) !important;
+  border: 1px solid rgba(139, 94, 60, 0.4) !important;
+  background: linear-gradient(135deg, #8B5E3C 0%, #B57A48 100%) !important;
   color: #FFFFFF !important;
   border-radius: 8px !important;
-  box-shadow: 0 8px 24px rgba(198, 139, 89, 0.25) !important;
+  box-shadow: 0 8px 24px rgba(139, 94, 60, 0.25) !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
@@ -477,9 +477,9 @@ button:hover,
 a[href="#demo"]:hover,
 a[href="/register"]:hover {
   transform: none !important;
-  background: linear-gradient(135deg, #D4A373 0%, #FFE8D6 100%) !important;
-  box-shadow: 0 12px 30px rgba(198, 139, 89, 0.4), 
-              0 0 15px rgba(198, 139, 89, 0.2) !important;
+  background: linear-gradient(135deg, #A06A42 0%, #C68B59 100%) !important;
+  box-shadow: 0 12px 30px rgba(139, 94, 60, 0.4), 
+              0 0 15px rgba(139, 94, 60, 0.2) !important;
 }
 
 button:active, 

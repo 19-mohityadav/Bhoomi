@@ -68,6 +68,8 @@ const NFT_miningPage = () => {
   const [walletAddress, setWalletAddress] = useState('');
   const [walletBalance, setWalletBalance] = useState(2.45);
   const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  const [walletDropdownOpen, setWalletDropdownOpen] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Minting Flow state
   const [isMinting, setIsMinting] = useState(false);
@@ -105,9 +107,14 @@ const NFT_miningPage = () => {
   };
 
   const handleDisconnectWallet = () => {
+    setShowConfirmModal(true);
+  };
+
+  const executeDisconnectWallet = () => {
     setWalletConnected(false);
     setWalletAddress('');
     setWalletBalance(0);
+    setWalletDropdownOpen(false);
     triggerToast('Wallet disconnected', 'info');
   };
 
@@ -199,17 +206,22 @@ const NFT_miningPage = () => {
           )}
 
           {walletConnected ? (
-            <div className="relative group">
-              <button className="bg-gradient-to-br from-primary/20 to-primary-container/20 border border-primary/40 text-primary font-headline text-xs font-bold px-4 py-2 rounded-full flex items-center gap-2 hover:bg-primary/10 transition-all">
+            <div className="relative">
+              <button
+                onClick={() => setWalletDropdownOpen(!walletDropdownOpen)}
+                className="bg-gradient-to-br from-primary/20 to-primary-container/20 border border-primary/40 text-primary font-headline text-xs font-bold px-4 py-2 rounded-full flex items-center gap-2 hover:bg-primary/10 transition-all"
+              >
                 <div className="w-2 h-2 rounded-full bg-primary-container animate-pulse" />
                 <span>{walletAddress.substring(0, 6)}...{walletAddress.substring(38)}</span>
               </button>
-              <div className="absolute right-0 top-full mt-2 w-48 bg-surface-container-high border border-outline-variant/20 rounded-md shadow-2xl opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-all duration-300 py-1 z-50">
-                <button onClick={handleDisconnectWallet} className="w-full px-4 py-3 text-left text-xs font-headline font-bold text-error hover:bg-error-container/10 transition-colors flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm">logout</span>
-                  Disconnect Wallet
-                </button>
-              </div>
+              {walletDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-surface-container-high border border-outline-variant/20 rounded-md shadow-2xl py-1 z-50 animate-fade-in">
+                  <button onClick={handleDisconnectWallet} className="w-full px-4 py-3 text-left text-xs font-headline font-bold text-error hover:bg-error-container/10 transition-colors flex items-center gap-2">
+                    <span className="material-symbols-outlined text-sm">logout</span>
+                    Disconnect Wallet
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <button 
@@ -650,6 +662,66 @@ const NFT_miningPage = () => {
         ))}
       </div>
 
+      {/* MetaMask Connection Overlay */}
+      {isConnectingWallet && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-6 animate-fade-in">
+          <div className="bg-surface-container-high border border-outline-variant/20 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl flex flex-col items-center gap-6">
+            <div className="relative w-24 h-24 flex items-center justify-center">
+              <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
+              <img 
+                src="https://lh3.googleusercontent.com/aida-public/AB6AXuBBdIVsUarpd3oBH5AZZuR_4UMzbKWu-M5Zr_KRm5ePRiQsNa1uhNbRt1yH6VwDJarboZpyKfMrhMX2hHCDbPf3rBiPuPensyN4HoE_p1q13VjqwO6Upl5CHLzRtaxY8PnDNibHoucurwcltrPi4GsOykYDYb0HUF7f1boH7IOWv9-1sxyytEuGDqgpeJIg_AB4S-S-vvyT1WY3Bq9cx1GddD8Vy5tWeDxgJcHF-hBfJSbYr4OKn1NsLsfVMl2hZ4uG4wExVXDspwJ4" 
+                alt="MetaMask Logo" 
+                className="w-16 h-16 object-contain animate-bounce" 
+              />
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-xl text-on-surface">Connecting MetaMask</h3>
+              <p className="text-on-surface-variant text-sm mt-2">
+                Opening MetaMask extension. Please approve the connection request in the popup window.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+              <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+              <span>Awaiting connection...</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Custom Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-surface-container-high border border-outline-variant/20 rounded-2xl p-6 max-w-sm w-full shadow-2xl flex flex-col gap-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-error/10 text-error flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">link_off</span>
+            </div>
+            <div>
+              <h3 className="font-headline font-bold text-lg text-on-surface">Disconnect Wallet</h3>
+              <p className="text-on-surface-variant text-sm mt-2">
+                Are you sure you want to disconnect your MetaMask wallet?
+              </p>
+            </div>
+            <div className="flex gap-3 mt-2">
+              <button 
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 py-2.5 rounded-lg border border-outline-variant/20 text-xs font-semibold hover:bg-surface-container-highest transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  executeDisconnectWallet();
+                }}
+                className="flex-1 py-2.5 rounded-lg bg-error text-on-error text-xs font-semibold hover:bg-error-dim transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
