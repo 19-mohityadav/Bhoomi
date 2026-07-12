@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 
@@ -7,7 +7,6 @@ const ConnectWalletPage = () => {
   const location = useLocation();
   const redirectTo = location.state?.redirectTo || '/dashboard';
   
-  const cardRef = useRef(null);
   const [hoveredButton, setHoveredButton] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [connectedWallet, setConnectedWallet] = useState(null);
@@ -34,6 +33,16 @@ const ConnectWalletPage = () => {
     }
     
     try {
+      // 1. Try to update the real Supabase Auth user profile if logged in
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('profiles')
+          .update({ wallet_address: address })
+          .eq('id', user.id);
+      }
+      
+      // 2. Local fallback for demo state
       const mockUserStr = localStorage.getItem('mockUser');
       if (mockUserStr) {
         const mockUser = JSON.parse(mockUserStr);
@@ -49,22 +58,12 @@ const ConnectWalletPage = () => {
   };
 
   useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!cardRef.current) return;
-      const xAxis = (window.innerWidth / 2 - e.pageX) / 50;
-      const yAxis = (window.innerHeight / 2 - e.pageY) / 50;
-      cardRef.current.style.transform = `rotateY(${xAxis}deg) rotateX(${yAxis}deg)`;
-    };
-
-    document.addEventListener('mousemove', handleMouseMove);
-
     // Smooth reveal on load
     const timer = setTimeout(() => {
       setIsLoaded(true);
     }, 100);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
       clearTimeout(timer);
     };
   }, []);
@@ -86,31 +85,26 @@ const ConnectWalletPage = () => {
             <button className="active:scale-95 duration-200 primary-gradient text-on-primary-container px-6 py-2 rounded-full font-headline font-bold tracking-wide uppercase text-sm shadow-xl shadow-primary/20">
               Connect Wallet
             </button>
-            <div className="p-2 rounded-full hover:bg-primary/10 transition-all cursor-pointer">
-              <span className="material-symbols-outlined text-primary">account_balance_wallet</span>
-            </div>
           </div>
         </nav>
       </header>
 
-      <main className="flex-grow pt-24 flex flex-col items-center justify-center relative px-6 overflow-hidden" style={{ perspective: '1000px' }}>
+      <main className="flex-grow py-12 flex flex-col items-center justify-center relative px-6 overflow-hidden">
         {/* Atmospheric Background Elements */}
-        <div className="absolute top-1/4 -left-20 w-96 h-96 bg-primary/10 rounded-full blur-[120px] pointer-events-none animate-float-slow"></div>
-        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-secondary/10 rounded-full blur-[120px] pointer-events-none animate-float"></div>
+        <div className="absolute top-1/4 -left-20 w-96 h-96 bg-primary/10 rounded-full blur-[120px] pointer-events-none"></div>
+        <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-secondary/10 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="absolute inset-0 grid-bg opacity-20 pointer-events-none z-0" />
         
         {/* Central Connection Card */}
         <div 
-          ref={cardRef}
-          className={`w-full max-w-xl glass-panel rounded-lg p-10 relative z-10 border border-outline-variant/15 shadow-2xl ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-5'} transition-all duration-1000 ease-[cubic-bezier(0.23,1,0.32,1)] transform-gpu`}
-          style={{ transformStyle: 'preserve-3d' }}
+          className={`w-full max-w-md glass-panel rounded-lg p-6 relative z-10 border border-outline-variant/15 shadow-2xl ${isLoaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-500`}
         >
-          <div className="flex flex-col items-center text-center mb-10">
-            <div className="w-16 h-16 bg-surface-container rounded-2xl flex items-center justify-center mb-6 border border-outline-variant/10">
-              <span className="material-symbols-outlined text-4xl text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>account_balance_wallet</span>
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="w-14 h-14 bg-surface-container rounded-2xl flex items-center justify-center mb-4 border border-outline-variant/10">
+              <span className="material-symbols-outlined text-3xl text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>account_balance_wallet</span>
             </div>
-            <h1 className="font-headline text-3xl md:text-4xl font-bold tracking-tight text-on-surface mb-3">Connect your crypto wallet</h1>
-            <p className="text-on-surface-variant max-w-md">Select your preferred wallet provider to access your digital land registry and start managing your ethereal assets.</p>
+            <h1 className="font-headline text-2xl md:text-3xl font-bold tracking-tight text-on-surface mb-2">Connect your wallet</h1>
+            <p className="text-on-surface-variant text-sm max-w-sm">Select your preferred provider to access the digital land registry.</p>
           </div>
           
           {/* Wallet Options */}
@@ -228,12 +222,6 @@ const ConnectWalletPage = () => {
             </a>
           </div>
           
-          {/* Security Badge */}
-          <div className="mt-8 flex items-center justify-center gap-3 bg-tertiary/10 px-4 py-2 rounded-full border border-tertiary/20">
-            <div className="w-2 h-2 rounded-full bg-tertiary animate-pulse"></div>
-            <span className="text-[10px] font-label font-bold uppercase tracking-widest text-tertiary">Encrypted Ledger Connection Active</span>
-          </div>
-
           {/* Continue to Dashboard CTA */}
           {connectedWallet && (
             <div className="mt-6 flex flex-col items-center gap-3 animate-fade-in">
@@ -257,27 +245,6 @@ const ConnectWalletPage = () => {
           <img alt="Abstract Blockchain Visualization" className="w-full h-full object-cover scale-110" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCr8RKR5AW9AIh5dyE5u-hVEaXr7Eq_WXWaJqNKMKxfwZmWnk1rzkSmgUTTM_7uY60VMSVkBLnXKQeHILigsCUBm9SlFeueEU0NobU1H6FHqy_d6w15NWTRBKK3NJaBKRNDtPA_h1p94zUnk8vwDefQTFu9QstxnI_k1pe9D8ZkSSdH8eiAPymeqtOFb2j-AAXmRMnD1YG1EKaz4ltRKDhPHzn1nkgNI12UIC7ErB0VXUq2FDzxcvb53mIi_rKzOoJ84SiTtMINqoCy"/>
         </div>
       </main>
-      
-      {/* Footer */}
-      <footer className="w-full py-12 bg-surface-container-lowest flex flex-col md:flex-row justify-between items-center px-12 border-t border-outline-variant/15 mt-auto relative z-20">
-        <div className="mb-6 md:mb-0">
-          <span className="font-headline text-lg text-on-surface font-bold tracking-tight">Bhoomi</span>
-          <p className="font-body text-xs text-on-surface-variant mt-1 opacity-80 hover:opacity-100 transition-opacity">© 2026 Bhoomi. All Rights Reserved.</p>
-        </div>
-        <div className="flex items-center gap-8">
-          <a className="font-body text-xs text-on-surface-variant hover:text-primary transition-colors" href="#">Privacy Policy</a>
-          <a className="font-body text-xs text-on-surface-variant hover:text-primary transition-colors" href="#">Terms of Service</a>
-          <a className="font-body text-xs text-on-surface-variant hover:text-primary transition-colors" href="#">Smart Contracts</a>
-        </div>
-        <div className="mt-6 md:mt-0 flex gap-4">
-          <div className="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center hover:bg-primary/20 transition-all cursor-pointer">
-            <span className="material-symbols-outlined text-sm text-on-surface-variant">share</span>
-          </div>
-          <div className="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center hover:bg-primary/20 transition-all cursor-pointer">
-            <span className="material-symbols-outlined text-sm text-on-surface-variant">verified_user</span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };

@@ -10,7 +10,7 @@ import { supabase } from "../supabaseClient";
  *   id, icon, title, description, color_class
  */
 export async function fetchFeatures() {
-  const { data, error } = await supabase.from("features").select("*", { count: "exact" });
+  const { data, error } = await supabase.from("features").select("*");
   if (error) {
     console.error("Failed to fetch features:", error);
     return [];
