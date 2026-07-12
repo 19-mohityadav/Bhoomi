@@ -8,6 +8,9 @@ import { formatCoordinates } from '../utils/helpers';
 // ─── Pinata Upload ────────────────────────────────────────────────────────────
 const pinataUpload = async (file, name) => {
   const jwt = import.meta.env.VITE_PINATA_JWT;
+  if (!jwt) {
+    throw new Error("Pinata JWT (VITE_PINATA_JWT) is missing in environment variables. Please check your deployment settings.");
+  }
   const form = new FormData();
   form.append('file', file);
   form.append('pinataMetadata', JSON.stringify({ name }));
@@ -23,6 +26,9 @@ const pinataUpload = async (file, name) => {
 
 const pinataUploadJSON = async (jsonObj, name) => {
   const jwt = import.meta.env.VITE_PINATA_JWT;
+  if (!jwt) {
+    throw new Error("Pinata JWT (VITE_PINATA_JWT) is missing in environment variables. Please check your deployment settings.");
+  }
   const res = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
     method: 'POST',
     headers: {
