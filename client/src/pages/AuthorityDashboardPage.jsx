@@ -36,33 +36,77 @@ const AuthorityDashboardPage = () => {
   const [mintStatus, setMintStatus] = useState('');
   const [authorityName, setAuthorityName] = useState('Inspector General');
   const [mapModalLand, setMapModalLand] = useState(null);
+  const [activeLandDocs, setActiveLandDocs] = useState(null);
+  const [activePersonalDocs, setActivePersonalDocs] = useState(null);
 
   const loadLands = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data: lands, error: landsError } = await supabase
       .from('land_parcels')
       .select('*')
       .order('created_at', { ascending: false });
-    if (data && !error) setAllLands(data);
+
+    if (landsError || !lands) {
+      setLoading(false);
+      return;
+    }
+
+    // Fetch profiles of the owners
+    const ownerAddresses = lands.map(l => l.owner_address).filter(Boolean);
+    if (ownerAddresses.length > 0) {
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('wallet_address', ownerAddresses);
+
+      if (profiles && !profilesError) {
+        const mappedLands = lands.map(land => {
+          const ownerProfile = profiles.find(p => p.wallet_address?.toLowerCase() === land.owner_address?.toLowerCase());
+          return {
+            ...land,
+            owner_profile: ownerProfile || null
+          };
+        });
+        setAllLands(mappedLands);
+        setLoading(false);
+        return;
+      }
+    }
+
+    setAllLands(lands.map(l => ({ ...l, owner_profile: null })));
     setLoading(false);
   }, []);
 
   useEffect(() => {
     const init = async () => {
-      const mockUserStr = localStorage.getItem('mockUser');
-      if (!mockUserStr) {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) {
         navigate('/login');
         return;
       }
-      const data = JSON.parse(mockUserStr);
-      if (data?.full_name) setAuthorityName(data.full_name);
+
+      // Fetch profile to verify role
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+
+      if (error || !profile || profile.role !== 'authority') {
+        console.error("Access denied. Not an authority account.");
+        alert("Access denied. You do not have permission to access the Authority Dashboard.");
+        navigate('/login');
+        return;
+      }
+
+      if (profile.full_name) setAuthorityName(profile.full_name);
       loadLands();
     };
     init();
   }, [loadLands, navigate]);
 
   const handleLogout = async () => {
-    localStorage.removeItem('mockUser');
+    await supabase.auth.signOut();
     navigate('/login');
   };
 
@@ -200,13 +244,22 @@ const AuthorityDashboardPage = () => {
           )}
         </div>
 
-        {land.document_url && (
-          <a href={land.document_url} target="_blank" rel="noreferrer"
-            className="flex items-center gap-1.5 text-xs text-indigo-600 hover:underline mb-4">
-            <span className="material-symbols-outlined text-xs">attach_file</span>
-            View Title Deed (IPFS)
-          </a>
-        )}
+        {/* Document Action Buttons */}
+        <div className="grid grid-cols-2 gap-2 mt-4 mb-4">
+          <button 
+            onClick={() => setActiveLandDocs(land)}
+            className="flex items-center justify-center gap-1.5 py-2 px-3 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-lg hover:bg-indigo-100 border border-indigo-200 transition-colors">
+            <span className="material-symbols-outlined text-sm">folder_open</span>
+            Land Docs
+          </button>
+          <button 
+            onClick={() => setActivePersonalDocs(land)}
+            disabled={!land.owner_profile}
+            className="flex items-center justify-center gap-1.5 py-2 px-3 bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 border border-slate-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <span className="material-symbols-outlined text-sm">account_box</span>
+            Personal Docs
+          </button>
+        </div>
 
         {/* NFT info if approved */}
         {land.status === 'approved' && land.nft_tx_hash && (
@@ -279,6 +332,164 @@ const AuthorityDashboardPage = () => {
                 existingPolygonCoords={parsePolygon(mapModalLand.coordinates)} 
                 height="400px" 
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Land Documents Modal */}
+      {activeLandDocs && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-indigo-600">landscape</span>
+                Land Documents
+              </h3>
+              <button onClick={() => setActiveLandDocs(null)} className="text-slate-400 hover:text-slate-600 flex items-center">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="text-sm font-semibold text-slate-700 mb-2">
+                Property: {activeLandDocs.land_name || `Property #${activeLandDocs.token_id}`}
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                {/* 1. Land Photo */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-indigo-600">image</span>
+                    <span className="text-sm font-medium text-slate-700">Land Photo / Image</span>
+                  </div>
+                  {activeLandDocs.land_image_url ? (
+                    <a href={activeLandDocs.land_image_url} target="_blank" rel="noreferrer"
+                      className="py-1.5 px-3 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors flex items-center gap-1">
+                      View <span className="material-symbols-outlined text-xs">open_in_new</span>
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">Not Uploaded</span>
+                  )}
+                </div>
+
+                {/* 2. Title Deed */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-indigo-600">description</span>
+                    <span className="text-sm font-medium text-slate-700">Title Deed</span>
+                  </div>
+                  {(activeLandDocs.deed_url || activeLandDocs.document_url) ? (
+                    <a href={activeLandDocs.deed_url || activeLandDocs.document_url} target="_blank" rel="noreferrer"
+                      className="py-1.5 px-3 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors flex items-center gap-1">
+                      View <span className="material-symbols-outlined text-xs">open_in_new</span>
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">Not Uploaded</span>
+                  )}
+                </div>
+
+                {/* 3. Sale Agreement */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-indigo-600">handshake</span>
+                    <span className="text-sm font-medium text-slate-700">Sale Agreement</span>
+                  </div>
+                  {activeLandDocs.agreement_url ? (
+                    <a href={activeLandDocs.agreement_url} target="_blank" rel="noreferrer"
+                      className="py-1.5 px-3 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors flex items-center gap-1">
+                      View <span className="material-symbols-outlined text-xs">open_in_new</span>
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">Not Uploaded</span>
+                  )}
+                </div>
+
+                {/* 4. Land Registry Copy */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-indigo-600">app_registration</span>
+                    <span className="text-sm font-medium text-slate-700">Land Registry Copy</span>
+                  </div>
+                  {activeLandDocs.registry_url ? (
+                    <a href={activeLandDocs.registry_url} target="_blank" rel="noreferrer"
+                      className="py-1.5 px-3 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors flex items-center gap-1">
+                      View <span className="material-symbols-outlined text-xs">open_in_new</span>
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">Not Uploaded</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Personal Documents Modal */}
+      {activePersonalDocs && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+              <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-indigo-600">badge</span>
+                Personal Documents (KYC)
+              </h3>
+              <button onClick={() => setActivePersonalDocs(null)} className="text-slate-400 hover:text-slate-600 flex items-center">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="text-sm font-semibold text-slate-700 mb-2">
+                Seller: {activePersonalDocs.owner_profile?.full_name || 'Unnamed Seller'}
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                {/* 1. Aadhaar Card */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-indigo-600">badge</span>
+                    <span className="text-sm font-medium text-slate-700">Aadhaar Card</span>
+                  </div>
+                  {activePersonalDocs.owner_profile?.aadhaar_url ? (
+                    <a href={activePersonalDocs.owner_profile.aadhaar_url} target="_blank" rel="noreferrer"
+                      className="py-1.5 px-3 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors flex items-center gap-1">
+                      View <span className="material-symbols-outlined text-xs">open_in_new</span>
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">Not Uploaded</span>
+                  )}
+                </div>
+
+                {/* 2. PAN Card */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-indigo-600">credit_card</span>
+                    <span className="text-sm font-medium text-slate-700">PAN Card</span>
+                  </div>
+                  {activePersonalDocs.owner_profile?.pan_url ? (
+                    <a href={activePersonalDocs.owner_profile.pan_url} target="_blank" rel="noreferrer"
+                      className="py-1.5 px-3 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors flex items-center gap-1">
+                      View <span className="material-symbols-outlined text-xs">open_in_new</span>
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">Not Uploaded</span>
+                  )}
+                </div>
+
+                {/* 3. Selfie Photo */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className="material-symbols-outlined text-indigo-600">face</span>
+                    <span className="text-sm font-medium text-slate-700">Selfie Verification</span>
+                  </div>
+                  {activePersonalDocs.owner_profile?.selfie_url ? (
+                    <a href={activePersonalDocs.owner_profile.selfie_url} target="_blank" rel="noreferrer"
+                      className="py-1.5 px-3 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700 transition-colors flex items-center gap-1">
+                      View <span className="material-symbols-outlined text-xs">open_in_new</span>
+                    </a>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">Not Uploaded</span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>

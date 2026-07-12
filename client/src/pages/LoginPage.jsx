@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { supabase } from '../supabaseClient';
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const [loaded, setLoaded] = useState(false);
+  
+  // Auth Form State
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => setLoaded(true), 100);
@@ -27,32 +34,60 @@ const LoginPage = () => {
     };
   }, []);
 
-  const handleRoleLogin = (role) => {
-    // Determine the dashboard path and display name based on role
-    let dashboardPath = '';
-    let fullName = '';
-    
-    if (role === 'authority') {
-      dashboardPath = '/authority-dashboard';
-      fullName = 'Inspector General';
-    } else if (role === 'seller') {
-      dashboardPath = '/dashboard';
-      fullName = 'Alex Sterling (Seller)';
-    } else {
-      dashboardPath = '/buyer-dashboard';
-      fullName = 'Guest Buyer';
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setError('Please enter both email and password.');
+      return;
     }
-                        
-    // Set mock user in localStorage
-    localStorage.setItem('mockUser', JSON.stringify({
-      role: role,
-      id: `mock-${role}-${Date.now()}`,
-      full_name: fullName,
-      wallet_address: null // To be set when they connect wallet
-    }));
 
-    // Redirect to connect wallet first, passing the intended destination
-    navigate('/connect-wallet', { state: { redirectTo: dashboardPath } });
+    setLoading(true);
+    setError('');
+
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) throw signInError;
+
+      const user = data.user;
+      if (!user) throw new Error('No user profile found.');
+
+      // Fetch profile from db to get user's role and wallet
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        throw new Error('User profile does not exist. Ensure your registration is complete and database migrations are run.');
+      }
+
+      // Determine redirect path
+      let dashboardPath = '';
+      if (profile.role === 'authority') {
+        dashboardPath = '/authority-dashboard';
+      } else if (profile.role === 'seller') {
+        dashboardPath = '/dashboard';
+      } else {
+        dashboardPath = '/buyer-dashboard';
+      }
+
+      // Redirect path
+      if (!profile.wallet_address) {
+        navigate('/connect-wallet', { state: { redirectTo: dashboardPath } });
+      } else {
+        navigate(dashboardPath);
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(err.message || 'Authentication failed. Please verify credentials.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -80,64 +115,74 @@ const LoginPage = () => {
             </div>
           </div>
           
-          <div className="glass-panel p-10 md:p-14 rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.4)] border border-outline-variant/10 hover-glow-border">
+          <div className="glass-panel p-10 md:p-14 rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.4)] border border-outline-variant/10 hover-glow-border bg-surface-container-low/80 backdrop-blur-md">
             <div className="mb-10">
               <div className="flex items-center space-x-2 mb-2">
-                <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
-                <span className="font-label text-[10px] tracking-[0.2em] uppercase text-on-surface-variant">Dev Mode Enabled</span>
+                <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                <span className="font-label text-[10px] tracking-[0.2em] uppercase text-on-surface-variant">Secure Identity</span>
               </div>
-              <h1 className="font-display text-4xl font-bold tracking-tight text-on-surface">Select Role</h1>
-              <p className="text-on-surface-variant text-sm mt-2">Authentication bypassed for easy testing.</p>
+              <h1 className="font-display text-4xl font-bold tracking-tight text-on-surface">Welcome Back</h1>
+              <p className="text-on-surface-variant text-sm mt-2">Sign in with your credentials to access your land registry dashboard.</p>
             </div>
+
+            {error && (
+              <div className="mb-6 p-4 rounded-md bg-error/10 border border-error/20 flex items-center gap-3 text-error text-sm">
+                <span className="material-symbols-outlined text-lg">warning</span>
+                <span>{error}</span>
+              </div>
+            )}
             
-            <div className="space-y-4">
-              <button 
-                onClick={() => handleRoleLogin('seller')}
-                className="w-full flex items-center justify-between p-5 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all group"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
-                    <span className="material-symbols-outlined">real_estate_agent</span>
-                  </div>
-                  <div className="text-left">
-                    <h3 className="font-bold text-on-surface">Enter as Seller</h3>
-                    <p className="text-xs text-on-surface-variant">Upload & manage land assets</p>
-                  </div>
+            <form onSubmit={handleLogin} className="space-y-6">
+              <div className="space-y-2">
+                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant" htmlFor="email">Email Address</label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/60 text-lg">mail</span>
+                  <input
+                    id="email"
+                    type="email"
+                    required
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 bg-surface-container border border-outline/20 rounded-md text-on-surface placeholder:text-outline/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-all text-sm"
+                  />
                 </div>
-                <span className="material-symbols-outlined text-primary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">arrow_forward</span>
-              </button>
+              </div>
 
-              <button 
-                onClick={() => handleRoleLogin('buyer')}
-                className="w-full flex items-center justify-between p-5 rounded-lg border border-secondary/30 bg-secondary/5 hover:bg-secondary/10 hover:border-secondary/50 transition-all group"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-secondary/20 flex items-center justify-center text-secondary group-hover:scale-110 transition-transform">
-                    <span className="material-symbols-outlined">shopping_cart</span>
-                  </div>
-                  <div className="text-left">
-                    <h3 className="font-bold text-on-surface">Enter as Buyer</h3>
-                    <p className="text-xs text-on-surface-variant">Purchase land NFTs</p>
-                  </div>
+              <div className="space-y-2">
+                <label className="font-label text-xs uppercase tracking-widest text-on-surface-variant" htmlFor="password">Password</label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant/60 text-lg">lock</span>
+                  <input
+                    id="password"
+                    type="password"
+                    required
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 bg-surface-container border border-outline/20 rounded-md text-on-surface placeholder:text-outline/40 focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-all text-sm"
+                  />
                 </div>
-                <span className="material-symbols-outlined text-secondary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">arrow_forward</span>
-              </button>
+              </div>
 
-              <button 
-                onClick={() => handleRoleLogin('authority')}
-                className="w-full flex items-center justify-between p-5 rounded-lg border border-tertiary/30 bg-tertiary/5 hover:bg-tertiary/10 hover:border-tertiary/50 transition-all group"
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex items-center justify-center py-3 bg-primary text-on-primary font-bold rounded-md hover:bg-primary-dim active:scale-95 transition-all text-sm disabled:opacity-50"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-tertiary/20 flex items-center justify-center text-tertiary group-hover:scale-110 transition-transform">
-                    <span className="material-symbols-outlined">gavel</span>
-                  </div>
-                  <div className="text-left">
-                    <h3 className="font-bold text-on-surface">Enter as Authority</h3>
-                    <p className="text-xs text-on-surface-variant">Verify & approve applications</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-tertiary opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all">arrow_forward</span>
+                {loading ? (
+                  <span className="material-symbols-outlined animate-spin text-lg">sync</span>
+                ) : (
+                  'Sign In'
+                )}
               </button>
+            </form>
+
+            <div className="mt-8 pt-6 border-t border-outline/10 text-center">
+              <span className="text-xs text-on-surface-variant">New to Bhoomi? </span>
+              <Link to="/register" className="text-xs text-primary font-bold hover:underline">
+                Create an Account
+              </Link>
             </div>
             
           </div>
@@ -148,3 +193,4 @@ const LoginPage = () => {
 };
 
 export default LoginPage;
+

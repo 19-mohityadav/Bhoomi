@@ -42,12 +42,27 @@ const BuyerDashboardPage = () => {
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
-    const mockUserStr = localStorage.getItem('mockUser');
-    if (!mockUserStr) { navigate('/login'); return; }
-    const data = JSON.parse(mockUserStr);
-    setProfile(data);
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!authUser) {
+      navigate('/login');
+      return null;
+    }
+
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authUser.id)
+      .single();
+
+    if (error || !profile) {
+      console.error("Error loading buyer profile:", error);
+      navigate('/login');
+      return null;
+    }
+
+    setProfile(profile);
     setLoading(false);
-    return data;
+    return profile;
   }, [navigate]);
 
   const loadListings = useCallback(async () => {
@@ -82,7 +97,7 @@ const BuyerDashboardPage = () => {
   }, [loadProfile, loadListings, loadTransactions]);
 
   const handleLogout = async () => {
-    localStorage.removeItem('mockUser');
+    await supabase.auth.signOut();
     navigate('/login');
   };
 
