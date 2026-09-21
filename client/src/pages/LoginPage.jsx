@@ -84,7 +84,15 @@ const LoginPage = () => {
       }
     } catch (err) {
       console.error('Login error:', err);
-      setError(err.message || 'Authentication failed. Please verify credentials.');
+      // Map common Supabase auth errors to friendly messages
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('email not confirmed')) {
+        setError('Your email is not confirmed. Please check your inbox for a confirmation link, or contact support.');
+      } else if (msg.toLowerCase().includes('invalid login credentials')) {
+        setError('Invalid email or password. Please check your credentials and try again.');
+      } else {
+        setError(msg || 'Authentication failed. Please verify your credentials.');
+      }
     } finally {
       setLoading(false);
     }
