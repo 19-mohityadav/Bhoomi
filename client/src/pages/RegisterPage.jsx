@@ -3,15 +3,33 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 
 // ─────────────────────────────────────────────
-// Mock IPFS upload – replace with real Pinata /
-// web3.storage call when ready
+// Upload to Supabase Storage (kyc-documents bucket)
+// Requires an authenticated session
 // ─────────────────────────────────────────────
-const uploadToIPFS = (file) =>
-  new Promise((resolve) =>
-    setTimeout(() => {
-      resolve(`ipfs://Qm${Math.random().toString(36).slice(2).toUpperCase()}${file.name.replace(/\W/g, '')}`);
-    }, 900)
-  );
+const uploadToSupabaseStorage = async (file, userId, docType) => {
+  const fileExt = (file.name && file.name.includes('.')) ? file.name.split('.').pop() : 'jpg';
+  const fileName = `${userId}/${docType}_${Date.now()}.${fileExt}`;
+  const contentType = file.type || (fileExt === 'pdf' ? 'application/pdf' : 'image/jpeg');
+
+  const { data, error } = await supabase.storage
+    .from('kyc-documents')
+    .upload(fileName, file, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType,
+    });
+
+  if (error) {
+    throw new Error(`Failed to upload ${docType}: ${error.message}`);
+  }
+
+  // Get the public URL for the uploaded file
+  const { data: urlData } = supabase.storage
+    .from('kyc-documents')
+    .getPublicUrl(data.path);
+
+  return urlData.publicUrl;
+};
 
 // ─── Step indicator ──────────────────────────
 const steps = ['Account', 'Documents', 'Selfie'];
@@ -244,20 +262,11 @@ const RegisterPage = () => {
     setLoading(true);
 
     try {
-      // ── IPFS uploads (mock) ──────────────────
-      const [aadhaarHash, panHash, selfieHash] = await Promise.all([
-        uploadToIPFS(aadhaarFile),
-        uploadToIPFS(panFile),
-        uploadToIPFS(selfieFile),
-      ]);
-      console.log('IPFS hashes (mock):', { aadhaarHash, panHash, selfieHash });
-      // TODO: store hashes in user metadata / DB when IPFS is wired up
-
-      // ── Supabase sign-up ─────────────────────
+      // ── Step 1: Supabase sign-up ──
       const walletAddress = '0x' + Array.from({ length: 39 }, () =>
         Math.floor(Math.random() * 16).toString(16)).join('');
 
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -266,16 +275,70 @@ const RegisterPage = () => {
             role,
             phone,
             wallet_address: walletAddress,
-            ipfs_aadhaar: aadhaarHash,
-            ipfs_pan: panHash,
-            ipfs_selfie: selfieHash,
           },
         },
       });
 
       if (signUpError) throw signUpError;
-      
-      // Determine redirect path based on role
+
+      // Supabase returns empty identities array when the email is already registered
+      if (signUpData?.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0) {
+        throw new Error('An account with this email already exists. Please sign in instead or use a different email address.');
+      }
+
+      // Ensure active session for authenticated state
+      let session = signUpData?.session;
+      let userId = signUpData?.user?.id;
+
+      if (!session) {
+        // Auto sign-in if email was auto-confirmed
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (!signInError && signInData?.session) {
+          session = signInData.session;
+          userId = signInData.user.id;
+        }
+      }
+
+      if (!userId) {
+        throw new Error('Could not establish user session. Please check your credentials or proceed to login.');
+      }
+
+      // ── Step 2: Upload KYC documents to Supabase Storage ──
+      const [aadhaarUrl, panUrl, selfieUrl] = await Promise.all([
+        uploadToSupabaseStorage(aadhaarFile, userId, 'aadhaar'),
+        uploadToSupabaseStorage(panFile, userId, 'pan'),
+        uploadToSupabaseStorage(selfieFile, userId, 'selfie'),
+      ]);
+      console.log('KYC docs stored in Supabase Storage:', { aadhaarUrl, panUrl, selfieUrl });
+
+      // ── Step 3: Update profile with document URLs ──
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: userId,
+          full_name: fullName,
+          role,
+          wallet_address: walletAddress,
+          aadhaar_url: aadhaarUrl,
+          pan_url: panUrl,
+          selfie_url: selfieUrl,
+          kyc_document_url: JSON.stringify({
+            aadhaar: aadhaarUrl,
+            pan: panUrl,
+            selfie: selfieUrl,
+          }),
+          kyc_status: 'pending',
+          kyc_submitted_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+
+      if (profileError) {
+        console.error('Profile upsert error:', profileError);
+      }
+
+      // ── Step 4: Redirect to role-based dashboard ──
       let dashboardPath = '';
       if (role === 'authority') {
         dashboardPath = '/authority-dashboard';
@@ -320,7 +383,7 @@ const RegisterPage = () => {
               {[
                 { icon: 'verified_user', color: 'text-primary', title: 'Immutable Ownership', sub: 'Secured by the protocol ledger.' },
                 { icon: 'account_balance_wallet', color: 'text-secondary', title: 'Seamless Transactions', sub: 'Direct peer-to-peer digital land exchange.' },
-                { icon: 'fingerprint', color: 'text-primary', title: 'KYC Secured', sub: 'Documents stored on IPFS, verified on-chain.' },
+                { icon: 'fingerprint', color: 'text-primary', title: 'KYC Secured', sub: 'Documents stored securely in cloud storage, verified on-chain.' },
               ].map(({ icon, color, title, sub }) => (
                 <div key={title} className="flex items-center space-x-4">
                   <div className={`w-12 h-12 rounded-full bg-surface-container flex items-center justify-center ${color}`}>
@@ -419,7 +482,7 @@ const RegisterPage = () => {
             {step === 1 && (
               <form className="space-y-5" onSubmit={nextStep}>
                 <p className="text-sm text-on-surface-variant mb-2">
-                  Upload your government-issued documents. They will be securely stored on <span className="text-primary font-semibold">IPFS</span>.
+                  Upload your government-issued documents. They will be securely stored in <span className="text-primary font-semibold">Supabase Storage</span>.
                 </p>
                 <FileZone id="aadhaar" label="Aadhaar Card" file={aadhaarFile} onFile={setAadhaarFile} />
                 <FileZone id="pan" label="PAN Card" file={panFile} onFile={setPanFile} />

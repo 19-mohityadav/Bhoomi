@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name text,
   role public.user_role DEFAULT 'buyer'::public.user_role NOT NULL,
-  wallet_address varchar(42) UNIQUE CONSTRAINT wallet_address_format CHECK (wallet_address IS NULL OR wallet_address ~ '^0x[a-fA-F0-9]{35,45}$'),
+  wallet_address varchar(42) CONSTRAINT wallet_address_format CHECK (wallet_address IS NULL OR wallet_address ~ '^0x[a-fA-F0-9]{35,45}$'),
   kyc_status public.kyc_status DEFAULT 'not_started'::public.kyc_status NOT NULL,
   kyc_submitted_at timestamp with time zone,
   kyc_document_url text,
@@ -403,3 +403,23 @@ CREATE POLICY authority_transactions_manage ON public.transactions
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon, authenticated;
 GRANT INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+
+-- --------------------------------------------------------------------
+-- 10. STORAGE POLICIES (kyc-documents)
+-- --------------------------------------------------------------------
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('kyc-documents', 'kyc-documents', true)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "Users can upload their own KYC docs" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update their own KYC docs" ON storage.objects;
+
+CREATE POLICY "Users can upload their own KYC docs" ON storage.objects
+FOR INSERT TO authenticated, anon
+WITH CHECK (bucket_id = 'kyc-documents');
+
+CREATE POLICY "Users can update their own KYC docs" ON storage.objects
+FOR UPDATE TO authenticated, anon
+USING (bucket_id = 'kyc-documents')
+WITH CHECK (bucket_id = 'kyc-documents');
+
