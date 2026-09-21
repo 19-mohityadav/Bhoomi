@@ -1,7 +1,7 @@
 import { useScrollAnimation } from '../hooks/useScrollAnimation';
 
 const FOOTER_LINKS = [
-  { label: 'Privacy Policy', href: '#' },
+  { label: 'Privacy Policy', href: 'https://www.freeprivacypolicy.com/live/e4eae90b-5880-4332-a134-d2373565df45' },
   { label: 'Terms of Service', href: '#' },
   { label: 'Security Audit', href: '#' },
   { label: 'Documentation', href: '#' },
