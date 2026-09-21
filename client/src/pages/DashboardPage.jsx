@@ -19,7 +19,16 @@ const pinataUpload = async (file, name) => {
     headers: { Authorization: `Bearer ${jwt}` },
     body: form,
   });
-  if (!res.ok) throw new Error(`Pinata upload failed for ${name}`);
+  if (!res.ok) {
+    let errDetail = '';
+    try {
+      const errJson = await res.json();
+      errDetail = errJson.error?.details || errJson.error?.reason || JSON.stringify(errJson);
+    } catch {
+      errDetail = await res.text().catch(() => res.statusText);
+    }
+    throw new Error(`Pinata upload failed for ${name} (${res.status}): ${errDetail}`);
+  }
   const data = await res.json();
   return `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
 };
@@ -37,7 +46,16 @@ const pinataUploadJSON = async (jsonObj, name) => {
     },
     body: JSON.stringify({ pinataMetadata: { name }, pinataContent: jsonObj }),
   });
-  if (!res.ok) throw new Error('Pinata JSON upload failed');
+  if (!res.ok) {
+    let errDetail = '';
+    try {
+      const errJson = await res.json();
+      errDetail = errJson.error?.details || errJson.error?.reason || JSON.stringify(errJson);
+    } catch {
+      errDetail = await res.text().catch(() => res.statusText);
+    }
+    throw new Error(`Pinata JSON upload failed (${res.status}): ${errDetail}`);
+  }
   const data = await res.json();
   return `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
 };
@@ -219,7 +237,10 @@ const DashboardPage = () => {
       }
     } catch (err) {
       console.error(err);
-      alert('Wallet connection failed: ' + err.message);
+      const msg = err.message?.includes('duplicate key')
+        ? 'This wallet is already linked to another account. The database constraint has been relaxed or you can disconnect it from that account.'
+        : err.message;
+      alert('Wallet connection failed: ' + msg);
     } finally {
       setWalletConnecting(false);
       setIsConnectingMetaMask(false);

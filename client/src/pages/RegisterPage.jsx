@@ -281,7 +281,12 @@ const RegisterPage = () => {
 
       if (signUpError) throw signUpError;
 
-      // Ensure active session for Supabase Storage RLS
+      // Supabase returns empty identities array when the email is already registered
+      if (signUpData?.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0) {
+        throw new Error('An account with this email already exists. Please sign in instead or use a different email address.');
+      }
+
+      // Ensure active session for authenticated state
       let session = signUpData?.session;
       let userId = signUpData?.user?.id;
 
@@ -298,7 +303,7 @@ const RegisterPage = () => {
       }
 
       if (!userId) {
-        throw new Error('Could not establish user session. Please proceed to login.');
+        throw new Error('Could not establish user session. Please check your credentials or proceed to login.');
       }
 
       // ── Step 2: Upload KYC documents to Supabase Storage ──
